@@ -25,10 +25,11 @@ else
   pass "未发现常见密钥模式"
 fi
 
-if grep -En 'curl.+\|.+bash|curl.+\|.+sh' "$ROOT_DIR/install.sh" >/dev/null 2>&1; then
-  fail "安装脚本不应把远程内容直接通过管道交给 Shell"
+if /bin/bash "$ROOT_DIR/tests/check_remote_shell_pipelines.sh" \
+  "$ROOT_DIR/install.sh" >/dev/null; then
+  pass "仅允许 Anthropic 官方 Claude 安装管道"
 else
-  pass "远程安装器先下载到临时文件再执行"
+  fail "远程 Shell 管道策略不符合要求"
 fi
 
 if grep -En 'sudo[[:space:]]+npm|rm[[:space:]]+-rf' "$ROOT_DIR/install.sh" >/dev/null 2>&1; then

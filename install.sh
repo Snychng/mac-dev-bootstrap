@@ -3,7 +3,7 @@
 set -u
 set -o pipefail
 
-readonly BOOTSTRAP_VERSION="1.1.0"
+readonly BOOTSTRAP_VERSION="1.1.1"
 readonly CONFIG_HOME="${HOME}/.config/mac-dev-bootstrap"
 readonly MANAGED_ZSH_CONFIG="${CONFIG_HOME}/zshrc.zsh"
 readonly ZSH_SOURCE_LINE='[[ -f "$HOME/.config/mac-dev-bootstrap/zshrc.zsh" ]] && source "$HOME/.config/mac-dev-bootstrap/zshrc.zsh"'
@@ -502,16 +502,54 @@ setup_python() {
   fi
 }
 
+claude_code_available() {
+  command_exists claude && claude --version >/dev/null 2>&1
+}
+
+run_claude_native_installer() {
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf '[模拟执行] curl -fsSL https://claude.ai/install.sh | bash\n'
+    return 0
+  fi
+
+  curl -fsSL https://claude.ai/install.sh | bash
+}
+
+install_claude_code() {
+  if claude_code_available; then
+    success "Claude Code 已安装"
+    return 0
+  fi
+
+  info "使用 Anthropic 官方原生安装器安装 Claude Code"
+  if run_claude_native_installer; then
+    hash -r 2>/dev/null || true
+    if claude_code_available; then
+      success "Claude Code 原生安装完成"
+      return 0
+    fi
+    warn "Claude Code 原生安装器已结束，但 claude --version 验证失败"
+  else
+    warn "Claude Code 原生安装失败，尝试官方 Homebrew Cask"
+  fi
+
+  info "使用 Homebrew Cask 兜底安装 Claude Code"
+  if run_command brew install --cask claude-code; then
+    hash -r 2>/dev/null || true
+    if claude_code_available; then
+      success "Claude Code 通过 Homebrew Cask 安装完成"
+      return 0
+    fi
+  fi
+
+  record_failure "Claude Code 安装失败"
+  return 1
+}
+
 install_native_ai_tools() {
   export PATH="${HOME}/.local/bin:${PATH}"
 
-  if command_exists claude; then
-    success "Claude Code 已安装"
-  elif download_and_run "Claude Code" "https://claude.ai/install.sh"; then
-    success "Claude Code 安装完成"
-  else
-    record_failure "Claude Code 安装失败"
-  fi
+  install_claude_code
 
   if command_exists grok; then
     success "Grok Build 已安装"

@@ -64,12 +64,14 @@ Homebrew 默认直接使用国内镜像：Brew 与 Core 仓库走清华 TUNA，F
 
 说明：Homebrew Cask 中部分应用的安装包由软件厂商自行托管，这些下载仍可能访问厂商的官方地址。
 
+Claude Code 优先执行 Anthropic 官方原生安装命令 `curl -fsSL https://claude.ai/install.sh | bash`。若安装 URL 返回 403、下载中断，或安装后 `claude --version` 验证失败，脚本会自动使用官方 Homebrew Cask `brew install --cask claude-code` 兜底，并再次验证命令可用性。
+
 ## 设计原则
 
 - 脚本可重复运行，已经存在的软件会跳过。
 - 不保存或上传账号、Token、数据库密码和 SSH 私钥。
 - 不覆盖已有 VS Code 和 Ghostty 配置。
-- 远程安装器先下载到临时文件，再交给 Bash 执行。
+- 除 Anthropic 官方 Claude 安装管道外，其他远程安装器先下载到临时文件，再交给 Bash 执行。
 - 单项失败后继续安装其他项目，并在结尾统一报告。
 
 ## 安装后登录

