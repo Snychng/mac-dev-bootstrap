@@ -8,7 +8,7 @@
 
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Snychng/mac-dev-bootstrap/main/install.sh)"
 
-安装过程中可能要求输入 macOS 管理员密码，并在首次安装 Xcode Command Line Tools 时弹出系统确认窗口。
+安装过程中可能要求输入 macOS 管理员密码。
 
 建议执行远程脚本前先查看源码：
 
@@ -16,7 +16,7 @@
 
 ## 安装内容
 
-- Xcode Command Line Tools、Homebrew
+- Homebrew
 - Chrome、飞书、Codex Desktop、Ghostty、VS Code、CC Switch
 - Git、Git LFS、GitHub CLI
 - Oh My Zsh 及 autosuggestions、syntax-highlighting、completions
