@@ -1,0 +1,25 @@
+name: 测试
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bash 语法检查
+        run: bash -n install.sh scripts/doctor.sh tests/run.sh tests/security_test.sh
+      - name: 行为测试
+        run: bash tests/run.sh
+      - name: 安全检查
+        run: bash tests/security_test.sh
+      - name: 模拟安装
+        run: bash install.sh --dry-run
