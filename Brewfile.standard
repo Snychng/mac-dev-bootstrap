@@ -1,0 +1,11 @@
+# 适中与完整档位在基础 Brewfile 之上追加安装。
+brew "azure-cli"
+brew "awscli"
+brew "kubernetes-cli"
+brew "docker"
+brew "glab"
+brew "supabase"
+brew "go"
+brew "cloudflared"
+
+cask "orbstack"

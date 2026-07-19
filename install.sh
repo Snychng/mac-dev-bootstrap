@@ -3,7 +3,7 @@
 set -u
 set -o pipefail
 
-readonly BOOTSTRAP_VERSION="1.1.1"
+readonly BOOTSTRAP_VERSION="1.2.0"
 readonly CONFIG_HOME="${HOME}/.config/mac-dev-bootstrap"
 readonly MANAGED_ZSH_CONFIG="${CONFIG_HOME}/zshrc.zsh"
 readonly ZSH_SOURCE_LINE='[[ -f "$HOME/.config/mac-dev-bootstrap/zshrc.zsh" ]] && source "$HOME/.config/mac-dev-bootstrap/zshrc.zsh"'
@@ -15,6 +15,7 @@ readonly HOMEBREW_BREW_GIT_OFFICIAL="https://github.com/Homebrew/brew"
 readonly HOMEBREW_CORE_GIT_OFFICIAL="https://github.com/Homebrew/homebrew-core"
 
 DRY_RUN=0
+INSTALL_PROFILE=""
 FAILED_STEPS=()
 
 color_enabled() {
@@ -63,6 +64,78 @@ valid_homebrew_mirror() {
   [[ "$1" == "china" || "$1" == "official" ]]
 }
 
+valid_install_profile() {
+  [[ "$1" == "basic" || "$1" == "standard" || "$1" == "full" ]]
+}
+
+profile_from_selection() {
+  case "$1" in
+    1) printf 'basic\n' ;;
+    2) printf 'standard\n' ;;
+    3) printf 'full\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+profile_label() {
+  case "${1:-${INSTALL_PROFILE:-basic}}" in
+    basic) printf '基础\n' ;;
+    standard) printf '适中\n' ;;
+    full) printf '完整\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+prompt_install_profile() {
+  local selection
+  local selected_profile
+
+  while true; do
+    printf '\n请选择安装档位：\n'
+    printf '  1) 基础：当前通用开发环境\n'
+    printf '  2) 适中：基础 + 云平台、容器与部署 CLI\n'
+    printf '  3) 完整：适中 + 后续扩展工具\n'
+    printf '请输入 1、2 或 3（默认 1）：'
+
+    if ! IFS= read -r selection; then
+      selection=""
+    fi
+    selection="${selection:-1}"
+    selected_profile="$(profile_from_selection "$selection" 2>/dev/null || true)"
+    if [[ -n "$selected_profile" ]]; then
+      INSTALL_PROFILE="$selected_profile"
+      success "已选择$(profile_label "$INSTALL_PROFILE")安装档位"
+      return 0
+    fi
+    warn "无效选择：${selection}，请输入 1、2 或 3"
+  done
+}
+
+resolve_install_profile() {
+  if [[ -z "$INSTALL_PROFILE" && -n "${MAC_DEV_PROFILE:-}" ]]; then
+    INSTALL_PROFILE="$MAC_DEV_PROFILE"
+  fi
+
+  if [[ -n "$INSTALL_PROFILE" ]]; then
+    if valid_install_profile "$INSTALL_PROFILE"; then
+      return 0
+    fi
+    error "安装档位仅支持 basic、standard 或 full"
+    return 1
+  fi
+
+  if [[ -t 0 ]]; then
+    prompt_install_profile
+  else
+    INSTALL_PROFILE="basic"
+  fi
+}
+
+profile_includes_standard() {
+  [[ "${INSTALL_PROFILE:-basic}" == "standard" || \
+     "${INSTALL_PROFILE:-basic}" == "full" ]]
+}
+
 homebrew_mirror_mode() {
   printf '%s\n' "${MAC_DEV_HOMEBREW_MIRROR:-china}"
 }
@@ -90,7 +163,7 @@ configure_homebrew_mirror() {
   esac
 }
 
-formulae() {
+basic_formulae() {
   printf '%s\n' \
     git \
     git-lfs \
@@ -111,7 +184,26 @@ formulae() {
     ansible
 }
 
-casks() {
+standard_formulae() {
+  printf '%s\n' \
+    azure-cli \
+    awscli \
+    kubernetes-cli \
+    docker \
+    glab \
+    supabase \
+    go \
+    cloudflared
+}
+
+formulae() {
+  basic_formulae
+  if profile_includes_standard; then
+    standard_formulae
+  fi
+}
+
+basic_casks() {
   printf '%s\n' \
     google-chrome \
     feishu \
@@ -122,6 +214,18 @@ casks() {
     font-hack-nerd-font \
     font-jetbrains-mono-nerd-font \
     font-maple-mono-nf-cn
+}
+
+standard_casks() {
+  printf '%s\n' \
+    orbstack
+}
+
+casks() {
+  basic_casks
+  if profile_includes_standard; then
+    standard_casks
+  fi
 }
 
 npm_global_packages() {
@@ -203,6 +307,7 @@ download_and_run() {
 print_plan() {
   printf 'mac-dev-bootstrap %s\n\n' "$BOOTSTRAP_VERSION"
   printf '[模拟执行] 目标平台：Apple Silicon macOS\n'
+  printf '[模拟执行] 安装档位：%s\n' "$(profile_label)"
   case "$(homebrew_mirror_mode)" in
     china) printf '[模拟执行] Homebrew 镜像：国内（清华 TUNA 仓库 + 中科大 USTC API/Bottle）\n' ;;
     official) printf '[模拟执行] Homebrew 镜像：官方源\n' ;;
@@ -306,6 +411,7 @@ cask_app_path() {
     ghostty) printf '%s\n' "/Applications/Ghostty.app" ;;
     visual-studio-code) printf '%s\n' "/Applications/Visual Studio Code.app" ;;
     cc-switch) printf '%s\n' "/Applications/CC Switch.app" ;;
+    orbstack) printf '%s\n' "/Applications/OrbStack.app" ;;
     *) return 1 ;;
   esac
 }
@@ -658,7 +764,7 @@ EOF_GHOSTTY
   fi
 }
 
-doctor_commands() {
+basic_doctor_commands() {
   printf '%s\n' \
     brew \
     git \
@@ -694,7 +800,27 @@ doctor_commands() {
     code
 }
 
-doctor_apps() {
+standard_doctor_commands() {
+  printf '%s\n' \
+    az \
+    aws \
+    kubectl \
+    docker \
+    orb \
+    glab \
+    supabase \
+    go \
+    cloudflared
+}
+
+doctor_commands() {
+  basic_doctor_commands
+  if profile_includes_standard; then
+    standard_doctor_commands
+  fi
+}
+
+basic_doctor_apps() {
   printf '%s\n' \
     "/Applications/Google Chrome.app" \
     "/Applications/Feishu.app" \
@@ -702,6 +828,18 @@ doctor_apps() {
     "/Applications/Ghostty.app" \
     "/Applications/Visual Studio Code.app" \
     "/Applications/CC Switch.app"
+}
+
+standard_doctor_apps() {
+  printf '%s\n' \
+    "/Applications/OrbStack.app"
+}
+
+doctor_apps() {
+  basic_doctor_apps
+  if profile_includes_standard; then
+    standard_doctor_apps
+  fi
 }
 
 setup_runtime_paths() {
@@ -745,21 +883,34 @@ usage() {
 
   --dry-run   仅打印安装计划，不修改电脑
   --doctor    仅检查环境是否安装完整
+  --profile PROFILE  安装档位：basic、standard 或 full
   --help      显示帮助
 
 可选环境变量：
   MAC_DEV_PYTHON_VERSION  指定 pyenv 安装的 Python 版本，默认 3.12.2
   MAC_DEV_HOMEBREW_MIRROR  Homebrew 下载源：china（默认）或 official
+  MAC_DEV_PROFILE         安装档位：basic、standard 或 full
   NO_COLOR                禁用彩色输出
 EOF_USAGE
 }
 
 parse_args() {
+  local requested_action="install"
+
   while [[ "$#" -gt 0 ]]; do
     case "$1" in
       --dry-run) DRY_RUN=1 ;;
-      --doctor) return 10 ;;
-      --help|-h) return 11 ;;
+      --doctor) requested_action="doctor" ;;
+      --profile)
+        if [[ "$#" -lt 2 ]]; then
+          error "--profile 需要 basic、standard 或 full"
+          return 2
+        fi
+        INSTALL_PROFILE="$2"
+        shift
+        ;;
+      --profile=*) INSTALL_PROFILE="${1#*=}" ;;
+      --help|-h) requested_action="help" ;;
       *)
         error "未知参数：$1"
         return 2
@@ -767,18 +918,24 @@ parse_args() {
     esac
     shift
   done
-  return 0
+
+  if [[ -n "$INSTALL_PROFILE" ]] && ! valid_install_profile "$INSTALL_PROFILE"; then
+    error "安装档位仅支持 basic、standard 或 full"
+    return 2
+  fi
+
+  case "$requested_action" in
+    install) return 0 ;;
+    doctor) return 10 ;;
+    help) return 11 ;;
+  esac
 }
 
 main() {
   local parse_status=0
   parse_args "$@" || parse_status=$?
   case "$parse_status" in
-    0) ;;
-    10)
-      doctor
-      return $?
-      ;;
+    0|10) ;;
     11)
       usage
       return 0
@@ -789,6 +946,16 @@ main() {
       ;;
   esac
 
+  if ! resolve_install_profile; then
+    usage
+    return 2
+  fi
+
+  if [[ "$parse_status" -eq 10 ]]; then
+    doctor
+    return $?
+  fi
+
   if [[ "$DRY_RUN" -eq 1 ]]; then
     print_plan
     return $?
@@ -796,6 +963,7 @@ main() {
 
   printf '\nmac-dev-bootstrap %s\n' "$BOOTSTRAP_VERSION"
   printf '开始配置 Apple Silicon Mac 开发环境。\n\n'
+  success "安装档位：$(profile_label)"
 
   preflight || return 1
   configure_homebrew_mirror || return 1

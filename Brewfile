@@ -1,3 +1,4 @@
+# 基础档位
 brew "git"
 brew "git-lfs"
 brew "gh"

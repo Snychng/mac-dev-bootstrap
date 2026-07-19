@@ -72,6 +72,130 @@ test_input_validation() {
   fi
 }
 
+test_install_profile_contract() {
+  local original_profile="${INSTALL_PROFILE-}"
+  local list
+  local item
+
+  assert_true "接受基础安装档位" valid_install_profile basic
+  assert_true "接受适中安装档位" valid_install_profile standard
+  assert_true "接受完整安装档位" valid_install_profile full
+  if valid_install_profile 'standard;echo unsafe'; then
+    fail "拒绝异常安装档位"
+  else
+    pass "拒绝异常安装档位"
+  fi
+
+  if [[ "$(profile_from_selection 1 2>/dev/null || true)" == "basic" && \
+        "$(profile_from_selection 2 2>/dev/null || true)" == "standard" && \
+        "$(profile_from_selection 3 2>/dev/null || true)" == "full" ]]; then
+    pass "数字选择映射三个安装档位"
+  else
+    fail "数字选择映射三个安装档位"
+  fi
+
+  INSTALL_PROFILE=""
+  if prompt_install_profile <<< "2" >/dev/null 2>&1 && \
+    [[ "$INSTALL_PROFILE" == "standard" ]]; then
+    pass "交互选择适中安装档位"
+  else
+    fail "交互选择适中安装档位"
+  fi
+
+  INSTALL_PROFILE=""
+  unset MAC_DEV_PROFILE
+  if resolve_install_profile </dev/null >/dev/null 2>&1 && \
+    [[ "$INSTALL_PROFILE" == "basic" ]]; then
+    pass "非交互环境默认基础档位"
+  else
+    fail "非交互环境默认基础档位"
+  fi
+
+  INSTALL_PROFILE=""
+  MAC_DEV_PROFILE="standard"
+  if resolve_install_profile </dev/null >/dev/null 2>&1 && \
+    [[ "$INSTALL_PROFILE" == "standard" ]]; then
+    pass "环境变量选择适中安装档位"
+  else
+    fail "环境变量选择适中安装档位"
+  fi
+  unset MAC_DEV_PROFILE
+
+  INSTALL_PROFILE=""
+  if prompt_install_profile <<< $'9\n3' >/dev/null 2>&1 && \
+    [[ "$INSTALL_PROFILE" == "full" ]]; then
+    pass "交互选择会拒绝无效输入并重试"
+  else
+    fail "交互选择会拒绝无效输入并重试"
+  fi
+
+  if (
+    INSTALL_PROFILE=""
+    DRY_RUN=0
+    parse_args --profile full --dry-run
+    [[ "$INSTALL_PROFILE" == "full" && "$DRY_RUN" -eq 1 ]]
+  ); then
+    pass "命令行参数选择完整安装档位"
+  else
+    fail "命令行参数选择完整安装档位"
+  fi
+
+  if (
+    INSTALL_PROFILE=""
+    parse_args --profile=standard
+    [[ "$INSTALL_PROFILE" == "standard" ]]
+  ); then
+    pass "等号参数选择适中安装档位"
+  else
+    fail "等号参数选择适中安装档位"
+  fi
+
+  if (
+    INSTALL_PROFILE=""
+    parse_args --profile >/dev/null 2>&1
+  ); then
+    fail "拒绝缺少值的安装档位参数"
+  else
+    pass "拒绝缺少值的安装档位参数"
+  fi
+
+  if (
+    INSTALL_PROFILE=""
+    parse_status=0
+    parse_args --doctor --profile standard || parse_status=$?
+    [[ "$parse_status" -eq 10 && "$INSTALL_PROFILE" == "standard" ]]
+  ); then
+    pass "doctor 参数顺序不影响档位选择"
+  else
+    fail "doctor 参数顺序不影响档位选择"
+  fi
+
+  INSTALL_PROFILE="basic"
+  list="$(formulae)"
+  for item in azure-cli awscli kubernetes-cli docker glab supabase go cloudflared; do
+    assert_not_contains "基础档位不含适中 Formula" "$list" "$item"
+  done
+  assert_not_contains "基础档位不含 OrbStack" "$(casks)" "orbstack"
+  assert_not_contains "基础 doctor 不检查 Azure CLI" "$(doctor_commands)" "az"
+
+  INSTALL_PROFILE="standard"
+  list="$(formulae)"
+  for item in azure-cli awscli kubernetes-cli docker glab supabase go cloudflared; do
+    assert_contains "适中档位包含新增 Formula" "$list" "$item"
+  done
+  assert_contains "适中档位包含 OrbStack" "$(casks)" "orbstack"
+  for item in az aws kubectl docker orb glab supabase go cloudflared; do
+    assert_contains "适中 doctor 检查新增命令" "$(doctor_commands)" "$item"
+  done
+  assert_contains "适中 doctor 检查 OrbStack 应用" "$(doctor_apps)" "/Applications/OrbStack.app"
+
+  INSTALL_PROFILE="full"
+  assert_contains "完整档位继承适中 Formula" "$(formulae)" "azure-cli"
+  assert_contains "完整档位继承适中 Cask" "$(casks)" "orbstack"
+
+  INSTALL_PROFILE="$original_profile"
+}
+
 test_homebrew_mirror_contract() {
   assert_true "接受国内 Homebrew 镜像模式" valid_homebrew_mirror "china"
   assert_true "接受 Homebrew 官方源模式" valid_homebrew_mirror "official"
@@ -411,6 +535,20 @@ test_cask_manifest() {
   done
 }
 
+test_brewfile_profile_manifest() {
+  local basic_manifest
+  local standard_manifest
+  local item
+
+  basic_manifest="$(sed -n 's/^[[:space:]]*brew "\([^"]*\)".*/\1/p; s/^[[:space:]]*cask "\([^"]*\)".*/\1/p' "$ROOT_DIR/Brewfile")"
+  standard_manifest="$(sed -n 's/^[[:space:]]*brew "\([^"]*\)".*/\1/p; s/^[[:space:]]*cask "\([^"]*\)".*/\1/p' "$ROOT_DIR/Brewfile.standard" 2>/dev/null || true)"
+
+  for item in azure-cli awscli kubernetes-cli docker glab supabase go cloudflared orbstack; do
+    assert_not_contains "基础 Brewfile 不含适中工具" "$basic_manifest" "$item"
+    assert_contains "适中 Brewfile 包含新增工具" "$standard_manifest" "$item"
+  done
+}
+
 test_npm_manifest() {
   local list
   list="$(npm_global_packages)"
@@ -448,8 +586,30 @@ test_dry_run_contract() {
     else
       fail "安装计划显示默认 Homebrew 国内镜像"
     fi
+    if printf '%s\n' "$output" | grep -Fq '安装档位：基础'; then
+      pass "dry-run 默认使用基础档位"
+    else
+      fail "dry-run 默认使用基础档位"
+    fi
   else
     fail "dry-run 应成功退出"
+  fi
+
+  if output="$(MAC_DEV_BOOTSTRAP_TEST=0 /bin/bash "$ROOT_DIR/install.sh" \
+    --profile standard --dry-run 2>&1)" && \
+    printf '%s\n' "$output" | grep -Fq '安装档位：适中' && \
+    printf '%s\n' "$output" | grep -Fq 'azure-cli' && \
+    printf '%s\n' "$output" | grep -Fq 'orbstack'; then
+    pass "dry-run 展示适中档位新增工具"
+  else
+    fail "dry-run 展示适中档位新增工具"
+  fi
+
+  if MAC_DEV_BOOTSTRAP_TEST=0 /bin/bash "$ROOT_DIR/install.sh" \
+    --profile invalid --dry-run >/dev/null 2>&1; then
+    fail "dry-run 拒绝非法安装档位"
+  else
+    pass "dry-run 拒绝非法安装档位"
   fi
 
   if MAC_DEV_BOOTSTRAP_TEST=0 MAC_DEV_HOMEBREW_MIRROR=invalid \
@@ -470,6 +630,7 @@ test_xcode_clt_not_managed() {
 
 test_platform_contract
 test_input_validation
+test_install_profile_contract
 test_homebrew_mirror_contract
 test_homebrew_mirror_installer
 test_homebrew_initialization_failure
@@ -480,6 +641,7 @@ test_claude_installer_verification
 test_remote_shell_pipeline_policy
 test_formula_manifest
 test_cask_manifest
+test_brewfile_profile_manifest
 test_npm_manifest
 test_vscode_manifest
 test_doctor_manifest

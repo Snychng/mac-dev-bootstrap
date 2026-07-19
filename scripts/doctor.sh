@@ -9,4 +9,4 @@ export MAC_DEV_BOOTSTRAP_TEST
 
 # shellcheck source=../install.sh
 source "${ROOT_DIR}/install.sh"
-doctor
+main --doctor "$@"
