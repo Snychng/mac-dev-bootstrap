@@ -14,6 +14,7 @@ brew "fd"
 brew "tree"
 brew "coreutils"
 brew "gemini-cli"
+brew "ansible"
 
 cask "google-chrome"
 cask "feishu"

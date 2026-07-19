@@ -24,6 +24,7 @@
 - Node.js、npm、Corepack、pnpm、Bun
 - pyenv、Python 3.12、uv
 - curl、wget、jq、ripgrep、fzf、fd、tree、coreutils
+- Ansible、ansible-playbook
 - Claude Code、Codex CLI、Gemini CLI、Grok Build
 - lark-cli、awb-cli、lj-awb-cli
 - Chrome DevTools MCP、PostgreSQL MCP、ClickHouse MCP
