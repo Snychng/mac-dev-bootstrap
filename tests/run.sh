@@ -82,11 +82,18 @@ test_formula_manifest() {
   local list
   list="$(formulae)"
   local item
-  for item in git git-lfs gh node pyenv python@3.12 uv curl wget jq ripgrep fzf fd tree coreutils gemini-cli; do
+  for item in git git-lfs gh node pyenv python@3.12 uv curl wget jq ripgrep fzf fd tree coreutils gemini-cli ansible; do
     assert_contains "Formula 清单" "$list" "$item"
   done
   assert_not_contains "Formula 清单排除 CMake" "$list" "cmake"
   assert_not_contains "Formula 清单排除 Ninja" "$list" "ninja"
+}
+
+test_doctor_manifest() {
+  local list
+  list="$(doctor_commands)"
+  assert_contains "doctor 检查 Ansible" "$list" "ansible"
+  assert_contains "doctor 检查 Ansible Playbook" "$list" "ansible-playbook"
 }
 
 test_cask_manifest() {
@@ -141,6 +148,7 @@ test_formula_manifest
 test_cask_manifest
 test_npm_manifest
 test_vscode_manifest
+test_doctor_manifest
 test_dry_run_contract
 
 printf '\n测试汇总：%d 通过，%d 失败\n' "$PASS_COUNT" "$FAIL_COUNT"

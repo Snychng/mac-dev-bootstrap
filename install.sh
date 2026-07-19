@@ -77,7 +77,8 @@ formulae() {
     fd \
     tree \
     coreutils \
-    gemini-cli
+    gemini-cli \
+    ansible
 }
 
 casks() {
@@ -605,6 +606,8 @@ doctor_commands() {
     chrome-devtools-mcp \
     mcp-server-postgres \
     mcp-clickhouse \
+    ansible \
+    ansible-playbook \
     code
 }
 
