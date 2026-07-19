@@ -53,13 +53,6 @@ valid_python_version() {
   [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
 
-valid_wait_seconds() {
-  [[ "$1" =~ ^[0-9]+$ ]] &&
-    [[ "${#1}" -le 5 ]] &&
-    [[ "$1" -ge 20 ]] &&
-    [[ "$1" -le 86400 ]]
-}
-
 formulae() {
   printf '%s\n' \
     git \
@@ -173,7 +166,6 @@ download_and_run() {
 print_plan() {
   printf 'mac-dev-bootstrap %s\n\n' "$BOOTSTRAP_VERSION"
   printf '[模拟执行] 目标平台：Apple Silicon macOS\n'
-  printf '[模拟执行] 安装或验证 Xcode Command Line Tools\n'
   printf '[模拟执行] Homebrew Formula：\n'
   formulae | sed 's/^/  - /'
   printf '[模拟执行] Homebrew Cask：\n'
@@ -199,39 +191,7 @@ preflight() {
     error "MAC_DEV_PYTHON_VERSION 必须是形如 3.12.2 的版本号"
     return 1
   fi
-  if ! valid_wait_seconds "${MAC_DEV_CLT_WAIT_SECONDS:-1800}"; then
-    error "MAC_DEV_CLT_WAIT_SECONDS 必须是 20 到 86400 的整数"
-    return 1
-  fi
   success "平台检查通过：${os_name}/${architecture}"
-}
-
-ensure_xcode_clt() {
-  local waited=0
-  local wait_limit="${MAC_DEV_CLT_WAIT_SECONDS:-1800}"
-
-  if /usr/bin/xcode-select -p >/dev/null 2>&1; then
-    success "Xcode Command Line Tools 已安装"
-    return 0
-  fi
-
-  info "请求安装 Xcode Command Line Tools，请在系统弹窗中确认"
-  /usr/bin/xcode-select --install >/dev/null 2>&1 || true
-  while ! /usr/bin/xcode-select -p >/dev/null 2>&1 && [[ "$waited" -lt "$wait_limit" ]]; do
-    if [[ "$waited" -eq 0 ]]; then
-      printf '脚本将等待安装完成，最长等待 %s 秒。\n' "$wait_limit"
-    fi
-    sleep 20
-    waited=$((waited + 20))
-  done
-
-  if /usr/bin/xcode-select -p >/dev/null 2>&1; then
-    success "Xcode Command Line Tools 安装完成"
-    return 0
-  fi
-
-  error "Xcode Command Line Tools 未在等待时间内完成安装"
-  return 1
 }
 
 load_homebrew() {
@@ -633,13 +593,6 @@ doctor() {
   local item
   setup_runtime_paths
 
-  if /usr/bin/xcode-select -p >/dev/null 2>&1; then
-    success "Xcode Command Line Tools 可用"
-  else
-    error "Xcode Command Line Tools 缺失"
-    failures=$((failures + 1))
-  fi
-
   while IFS= read -r item; do
     [[ -n "$item" ]] || continue
     if command_exists "$item"; then
@@ -673,7 +626,6 @@ usage() {
 
 可选环境变量：
   MAC_DEV_PYTHON_VERSION  指定 pyenv 安装的 Python 版本，默认 3.12.2
-  MAC_DEV_CLT_WAIT_SECONDS  等待 Xcode Command Line Tools 的秒数，默认 1800
   NO_COLOR                禁用彩色输出
 EOF_USAGE
 }
@@ -722,7 +674,6 @@ main() {
   printf '开始配置 Apple Silicon Mac 开发环境。\n\n'
 
   preflight || return 1
-  ensure_xcode_clt || return 1
   install_homebrew || {
     error "Homebrew 安装失败，无法继续"
     return 1

@@ -70,12 +70,6 @@ test_input_validation() {
   else
     pass "拒绝异常 Python 版本"
   fi
-  assert_true "接受数字等待时长" valid_wait_seconds "1800"
-  if valid_wait_seconds '20;echo unsafe'; then
-    fail "拒绝异常等待时长"
-  else
-    pass "拒绝异常等待时长"
-  fi
 }
 
 test_formula_manifest() {
@@ -133,12 +127,20 @@ test_dry_run_contract() {
       fail "dry-run 输出缺少模拟标记"
     fi
     if printf '%s\n' "$output" | grep -Fq 'Xcode Command Line Tools'; then
-      pass "安装计划包含 Xcode Command Line Tools"
+      fail "安装计划不应包含 Xcode Command Line Tools"
     else
-      fail "安装计划缺少 Xcode Command Line Tools"
+      pass "安装计划不包含 Xcode Command Line Tools"
     fi
   else
     fail "dry-run 应成功退出"
+  fi
+}
+
+test_xcode_clt_not_managed() {
+  if grep -Fq 'xcode-select --install' "$ROOT_DIR/install.sh"; then
+    fail "脚本不应主动安装 Xcode Command Line Tools"
+  else
+    pass "脚本不主动安装 Xcode Command Line Tools"
   fi
 }
 
@@ -150,6 +152,7 @@ test_npm_manifest
 test_vscode_manifest
 test_doctor_manifest
 test_dry_run_contract
+test_xcode_clt_not_managed
 
 printf '\n测试汇总：%d 通过，%d 失败\n' "$PASS_COUNT" "$FAIL_COUNT"
 if [[ "$FAIL_COUNT" -ne 0 ]]; then
