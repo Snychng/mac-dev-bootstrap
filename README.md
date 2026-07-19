@@ -10,6 +10,8 @@
 
 安装过程中可能要求输入 macOS 管理员密码。
 
+Homebrew 默认直接使用国内镜像：Brew 与 Core 仓库走清华 TUNA，Formula/Cask 元数据和预编译 Bottle 走中科大 USTC。首次引导仍使用 Homebrew 官方的小型安装脚本，以兼容尚未具备可用 Git 的全新 Mac；后续主要下载均由国内镜像承接。配置会写入项目管理的 zsh 配置，重新打开终端后仍然生效。
+
 建议执行远程脚本前先查看源码：
 
     curl -fsSL https://raw.githubusercontent.com/Snychng/mac-dev-bootstrap/main/install.sh | less
@@ -43,6 +45,24 @@
 指定 pyenv 安装的 Python 版本：
 
     MAC_DEV_PYTHON_VERSION=3.12.2 /bin/bash install.sh
+
+临时切回 Homebrew 官方源运行安装：
+
+    MAC_DEV_HOMEBREW_MIRROR=official /bin/bash install.sh
+
+在当前终端切回官方源：
+
+    export MAC_DEV_HOMEBREW_MIRROR=official
+    source ~/.config/mac-dev-bootstrap/zshrc.zsh
+    brew update
+
+恢复国内镜像：
+
+    unset MAC_DEV_HOMEBREW_MIRROR
+    source ~/.config/mac-dev-bootstrap/zshrc.zsh
+    brew update
+
+说明：Homebrew Cask 中部分应用的安装包由软件厂商自行托管，这些下载仍可能访问厂商的官方地址。
 
 ## 设计原则
 

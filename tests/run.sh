@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 set -u
 set -o pipefail
@@ -72,6 +72,158 @@ test_input_validation() {
   fi
 }
 
+test_homebrew_mirror_contract() {
+  assert_true "接受国内 Homebrew 镜像模式" valid_homebrew_mirror "china"
+  assert_true "接受 Homebrew 官方源模式" valid_homebrew_mirror "official"
+  if valid_homebrew_mirror 'china;echo unsafe'; then
+    fail "拒绝异常 Homebrew 镜像模式"
+  else
+    pass "拒绝异常 Homebrew 镜像模式"
+  fi
+
+  local mirror_environment
+  if mirror_environment="$({
+    unset HOMEBREW_BREW_GIT_REMOTE HOMEBREW_CORE_GIT_REMOTE
+    unset HOMEBREW_API_DOMAIN HOMEBREW_BOTTLE_DOMAIN
+    export HOMEBREW_NO_INSTALL_FROM_API=1
+    configure_homebrew_mirror china
+    printf '%s\n' \
+      "${HOMEBREW_BREW_GIT_REMOTE-}" \
+      "${HOMEBREW_CORE_GIT_REMOTE-}" \
+      "${HOMEBREW_API_DOMAIN-}" \
+      "${HOMEBREW_BOTTLE_DOMAIN-}" \
+      "HOMEBREW_NO_INSTALL_FROM_API=${HOMEBREW_NO_INSTALL_FROM_API-}"
+  })"; then
+    assert_contains "Brew 仓库使用清华镜像" "$mirror_environment" "https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git"
+    assert_contains "Core 仓库使用清华镜像" "$mirror_environment" "https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git"
+    assert_contains "Homebrew API 使用中科大镜像" "$mirror_environment" "https://mirrors.ustc.edu.cn/homebrew-bottles/api"
+    assert_contains "Homebrew Bottle 使用中科大镜像" "$mirror_environment" "https://mirrors.ustc.edu.cn/homebrew-bottles"
+    if printf '%s\n' "$mirror_environment" | grep -Fqx 'HOMEBREW_NO_INSTALL_FROM_API='; then
+      pass "国内镜像模式启用 Homebrew API 安装"
+    else
+      fail "国内镜像模式启用 Homebrew API 安装"
+    fi
+  else
+    fail "国内 Homebrew 镜像环境配置可执行"
+  fi
+
+  unset HOMEBREW_BREW_GIT_REMOTE HOMEBREW_CORE_GIT_REMOTE
+  unset HOMEBREW_API_DOMAIN HOMEBREW_BOTTLE_DOMAIN
+  configure_homebrew_mirror china >/dev/null 2>&1 || true
+  if configure_homebrew_mirror official && \
+    [[ "${HOMEBREW_BREW_GIT_REMOTE-}" == "https://github.com/Homebrew/brew" && \
+       "${HOMEBREW_CORE_GIT_REMOTE-}" == "https://github.com/Homebrew/homebrew-core" && \
+       -z "${HOMEBREW_API_DOMAIN-}" && \
+       -z "${HOMEBREW_BOTTLE_DOMAIN-}" ]]; then
+    pass "官方源模式显式恢复 Homebrew 官方仓库"
+  else
+    fail "官方源模式显式恢复 Homebrew 官方仓库"
+  fi
+}
+
+test_homebrew_mirror_installer() {
+  local output
+  if output="$({
+    homebrew_available() { return 1; }
+    download_and_run() {
+      printf '%s\n' "$2" "${HOMEBREW_BREW_GIT_REMOTE-}" "${HOMEBREW_API_DOMAIN-}"
+    }
+    load_homebrew() { return 0; }
+    configure_homebrew_mirror china
+    install_homebrew
+  } 2>&1)" && \
+    printf '%s\n' "$output" | grep -Fq \
+      'https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh' && \
+    printf '%s\n' "$output" | grep -Fq \
+      'https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git' && \
+    printf '%s\n' "$output" | grep -Fq \
+      'https://mirrors.ustc.edu.cn/homebrew-bottles/api'; then
+    pass "Homebrew 官方引导器继承国内镜像配置"
+  else
+    fail "Homebrew 官方引导器继承国内镜像配置"
+  fi
+}
+
+test_homebrew_initialization_failure() {
+  if (
+    homebrew_available() { return 0; }
+    load_homebrew() { return 42; }
+    install_homebrew >/dev/null 2>&1
+  ); then
+    fail "已有 Homebrew 初始化失败时停止安装"
+  else
+    pass "已有 Homebrew 初始化失败时停止安装"
+  fi
+
+  if (
+    find_homebrew_binary() { printf '/usr/bin/false\n'; }
+    load_homebrew >/dev/null 2>&1
+  ); then
+    fail "brew shellenv 失败码不会被 eval 吞掉"
+  else
+    pass "brew shellenv 失败码不会被 eval 吞掉"
+  fi
+}
+
+test_homebrew_mirror_shell_config() {
+  local temporary_directory
+  local managed_config
+  local mirror_block
+  local shell_output
+  local expected_line
+  temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/mac-dev-bootstrap-test.XXXXXX")"
+  managed_config="$temporary_directory/zshrc.zsh"
+
+  if ! write_managed_shell_config "$managed_config"; then
+    fail "终端配置持久化 Homebrew 国内镜像"
+    command rm -r "$temporary_directory"
+    return
+  fi
+
+  for expected_line in \
+    'HOMEBREW_BREW_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git"' \
+    'HOMEBREW_CORE_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git"' \
+    'HOMEBREW_API_DOMAIN="https://mirrors.ustc.edu.cn/homebrew-bottles/api"' \
+    'HOMEBREW_BOTTLE_DOMAIN="https://mirrors.ustc.edu.cn/homebrew-bottles"' \
+    'unset HOMEBREW_NO_INSTALL_FROM_API'; do
+    if grep -Fq "$expected_line" "$managed_config"; then
+      pass "终端配置持久化 Homebrew 国内镜像"
+    else
+      fail "终端配置持久化 Homebrew 国内镜像（缺少 ${expected_line}）"
+    fi
+  done
+
+  mirror_block="$(sed -n '2,/^esac$/p' "$managed_config")"
+  shell_output="$(MAC_DEV_HOMEBREW_MIRROR_BLOCK="$mirror_block" PATH="/usr/bin:/bin" /bin/bash -c '
+    print_mirrors() {
+      printf "%s:%s|%s|%s|%s\n" "$1" \
+        "${HOMEBREW_BREW_GIT_REMOTE-}" \
+        "${HOMEBREW_CORE_GIT_REMOTE-}" \
+        "${HOMEBREW_API_DOMAIN-}" \
+        "${HOMEBREW_BOTTLE_DOMAIN-}"
+    }
+    eval "$MAC_DEV_HOMEBREW_MIRROR_BLOCK"
+    print_mirrors china
+    export MAC_DEV_HOMEBREW_MIRROR=official
+    eval "$MAC_DEV_HOMEBREW_MIRROR_BLOCK"
+    print_mirrors official
+    unset MAC_DEV_HOMEBREW_MIRROR
+    eval "$MAC_DEV_HOMEBREW_MIRROR_BLOCK"
+    print_mirrors china-again
+    export MAC_DEV_HOMEBREW_MIRROR=invalid
+    eval "$MAC_DEV_HOMEBREW_MIRROR_BLOCK"
+    print_mirrors invalid
+  ')"
+
+  assert_contains "终端配置可切到 Homebrew 官方源" "$shell_output" \
+    "official:https://github.com/Homebrew/brew|https://github.com/Homebrew/homebrew-core||"
+  assert_contains "终端配置可恢复 Homebrew 国内镜像" "$shell_output" \
+    "china-again:https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git|https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git|https://mirrors.ustc.edu.cn/homebrew-bottles/api|https://mirrors.ustc.edu.cn/homebrew-bottles"
+  assert_contains "非法终端镜像模式不会沿用旧镜像" "$shell_output" "invalid:|||"
+
+  command rm -r "$temporary_directory"
+}
+
 test_formula_manifest() {
   local list
   list="$(formulae)"
@@ -120,7 +272,7 @@ test_vscode_manifest() {
 
 test_dry_run_contract() {
   local output
-  if output="$(MAC_DEV_BOOTSTRAP_TEST=0 bash "$ROOT_DIR/install.sh" --dry-run 2>&1)"; then
+  if output="$(MAC_DEV_BOOTSTRAP_TEST=0 /bin/bash "$ROOT_DIR/install.sh" --dry-run 2>&1)"; then
     if printf '%s\n' "$output" | grep -Fq '[模拟执行]'; then
       pass "dry-run 可执行且不落盘"
     else
@@ -131,8 +283,20 @@ test_dry_run_contract() {
     else
       pass "安装计划不包含 Xcode Command Line Tools"
     fi
+    if printf '%s\n' "$output" | grep -Fq 'Homebrew 镜像：国内'; then
+      pass "安装计划显示默认 Homebrew 国内镜像"
+    else
+      fail "安装计划显示默认 Homebrew 国内镜像"
+    fi
   else
     fail "dry-run 应成功退出"
+  fi
+
+  if MAC_DEV_BOOTSTRAP_TEST=0 MAC_DEV_HOMEBREW_MIRROR=invalid \
+    /bin/bash "$ROOT_DIR/install.sh" --dry-run >/dev/null 2>&1; then
+    fail "dry-run 拒绝非法 Homebrew 镜像模式"
+  else
+    pass "dry-run 拒绝非法 Homebrew 镜像模式"
   fi
 }
 
@@ -146,6 +310,10 @@ test_xcode_clt_not_managed() {
 
 test_platform_contract
 test_input_validation
+test_homebrew_mirror_contract
+test_homebrew_mirror_installer
+test_homebrew_initialization_failure
+test_homebrew_mirror_shell_config
 test_formula_manifest
 test_cask_manifest
 test_npm_manifest

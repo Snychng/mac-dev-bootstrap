@@ -42,6 +42,12 @@ while IFS= read -r url; do
   [[ -n "$url" ]] || continue
   case "$url" in
     https://raw.githubusercontent.com/Homebrew/install/*|\
+    https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git|\
+    https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git|\
+    https://mirrors.ustc.edu.cn/homebrew-bottles|\
+    https://mirrors.ustc.edu.cn/homebrew-bottles/api|\
+    https://github.com/Homebrew/brew|\
+    https://github.com/Homebrew/homebrew-core|\
     https://github.com/ohmyzsh/*|\
     https://github.com/zsh-users/*|\
     https://bun.com/*|\

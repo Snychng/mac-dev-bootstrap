@@ -3,10 +3,16 @@
 set -u
 set -o pipefail
 
-readonly BOOTSTRAP_VERSION="1.0.0"
+readonly BOOTSTRAP_VERSION="1.1.0"
 readonly CONFIG_HOME="${HOME}/.config/mac-dev-bootstrap"
 readonly MANAGED_ZSH_CONFIG="${CONFIG_HOME}/zshrc.zsh"
 readonly ZSH_SOURCE_LINE='[[ -f "$HOME/.config/mac-dev-bootstrap/zshrc.zsh" ]] && source "$HOME/.config/mac-dev-bootstrap/zshrc.zsh"'
+readonly HOMEBREW_BREW_GIT_MIRROR="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git"
+readonly HOMEBREW_CORE_GIT_MIRROR="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git"
+readonly HOMEBREW_API_MIRROR="https://mirrors.ustc.edu.cn/homebrew-bottles/api"
+readonly HOMEBREW_BOTTLE_MIRROR="https://mirrors.ustc.edu.cn/homebrew-bottles"
+readonly HOMEBREW_BREW_GIT_OFFICIAL="https://github.com/Homebrew/brew"
+readonly HOMEBREW_CORE_GIT_OFFICIAL="https://github.com/Homebrew/homebrew-core"
 
 DRY_RUN=0
 FAILED_STEPS=()
@@ -51,6 +57,37 @@ platform_supported() {
 
 valid_python_version() {
   [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+}
+
+valid_homebrew_mirror() {
+  [[ "$1" == "china" || "$1" == "official" ]]
+}
+
+homebrew_mirror_mode() {
+  printf '%s\n' "${MAC_DEV_HOMEBREW_MIRROR:-china}"
+}
+
+configure_homebrew_mirror() {
+  local mode="${1:-$(homebrew_mirror_mode)}"
+
+  case "$mode" in
+    china)
+      export HOMEBREW_BREW_GIT_REMOTE="$HOMEBREW_BREW_GIT_MIRROR"
+      export HOMEBREW_CORE_GIT_REMOTE="$HOMEBREW_CORE_GIT_MIRROR"
+      export HOMEBREW_API_DOMAIN="$HOMEBREW_API_MIRROR"
+      export HOMEBREW_BOTTLE_DOMAIN="$HOMEBREW_BOTTLE_MIRROR"
+      unset HOMEBREW_NO_INSTALL_FROM_API
+      ;;
+    official)
+      export HOMEBREW_BREW_GIT_REMOTE="$HOMEBREW_BREW_GIT_OFFICIAL"
+      export HOMEBREW_CORE_GIT_REMOTE="$HOMEBREW_CORE_GIT_OFFICIAL"
+      unset HOMEBREW_API_DOMAIN HOMEBREW_BOTTLE_DOMAIN
+      ;;
+    *)
+      error "MAC_DEV_HOMEBREW_MIRROR 仅支持 china 或 official"
+      return 1
+      ;;
+  esac
 }
 
 formulae() {
@@ -166,6 +203,14 @@ download_and_run() {
 print_plan() {
   printf 'mac-dev-bootstrap %s\n\n' "$BOOTSTRAP_VERSION"
   printf '[模拟执行] 目标平台：Apple Silicon macOS\n'
+  case "$(homebrew_mirror_mode)" in
+    china) printf '[模拟执行] Homebrew 镜像：国内（清华 TUNA 仓库 + 中科大 USTC API/Bottle）\n' ;;
+    official) printf '[模拟执行] Homebrew 镜像：官方源\n' ;;
+    *)
+      error "MAC_DEV_HOMEBREW_MIRROR 仅支持 china 或 official"
+      return 1
+      ;;
+  esac
   printf '[模拟执行] Homebrew Formula：\n'
   formulae | sed 's/^/  - /'
   printf '[模拟执行] Homebrew Cask：\n'
@@ -191,27 +236,43 @@ preflight() {
     error "MAC_DEV_PYTHON_VERSION 必须是形如 3.12.2 的版本号"
     return 1
   fi
+  if ! valid_homebrew_mirror "$(homebrew_mirror_mode)"; then
+    error "MAC_DEV_HOMEBREW_MIRROR 仅支持 china 或 official"
+    return 1
+  fi
   success "平台检查通过：${os_name}/${architecture}"
 }
 
-load_homebrew() {
-  local brew_binary=""
+find_homebrew_binary() {
   if [[ -x /opt/homebrew/bin/brew ]]; then
-    brew_binary="/opt/homebrew/bin/brew"
+    printf '/opt/homebrew/bin/brew\n'
   elif command_exists brew; then
-    brew_binary="$(command -v brew)"
-  fi
-
-  if [[ -z "$brew_binary" ]]; then
+    command -v brew
+  else
     return 1
   fi
+}
 
-  eval "$("$brew_binary" shellenv)"
+load_homebrew() {
+  local brew_binary
+  local shell_environment
+
+  brew_binary="$(find_homebrew_binary)" || return 1
+  shell_environment="$("$brew_binary" shellenv)" || return 1
+
+  eval "$shell_environment"
+}
+
+homebrew_available() {
+  find_homebrew_binary >/dev/null
 }
 
 install_homebrew() {
-  if command_exists brew || [[ -x /opt/homebrew/bin/brew ]]; then
-    load_homebrew
+  if homebrew_available; then
+    if ! load_homebrew; then
+      error "Homebrew 已存在但环境初始化失败"
+      return 1
+    fi
     success "Homebrew 已安装"
     return 0
   fi
@@ -303,20 +364,30 @@ install_zsh_plugin() {
   fi
 }
 
-write_shell_config() {
-  local zshrc="${HOME}/.zshrc"
+write_managed_shell_config() {
+  local destination="$1"
 
-  if ! run_command mkdir -p "$CONFIG_HOME"; then
-    record_failure "终端配置目录创建失败"
-    return
-  fi
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    printf '[模拟执行] 写入 %s 并连接到 %s\n' "$MANAGED_ZSH_CONFIG" "$zshrc"
-    return 0
-  fi
-
-  if ! cat > "$MANAGED_ZSH_CONFIG" <<'EOF_ZSH'
+  cat > "$destination" <<'EOF_ZSH'
 # 由 mac-dev-bootstrap 管理；此文件不存放任何密钥。
+case "${MAC_DEV_HOMEBREW_MIRROR:-china}" in
+  china)
+    export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git"
+    export HOMEBREW_CORE_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git"
+    export HOMEBREW_API_DOMAIN="https://mirrors.ustc.edu.cn/homebrew-bottles/api"
+    export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.ustc.edu.cn/homebrew-bottles"
+    unset HOMEBREW_NO_INSTALL_FROM_API
+    ;;
+  official)
+    export HOMEBREW_BREW_GIT_REMOTE="https://github.com/Homebrew/brew"
+    export HOMEBREW_CORE_GIT_REMOTE="https://github.com/Homebrew/homebrew-core"
+    unset HOMEBREW_API_DOMAIN HOMEBREW_BOTTLE_DOMAIN
+    ;;
+  *)
+    unset HOMEBREW_BREW_GIT_REMOTE HOMEBREW_CORE_GIT_REMOTE
+    unset HOMEBREW_API_DOMAIN HOMEBREW_BOTTLE_DOMAIN
+    ;;
+esac
+
 if [[ -x /opt/homebrew/bin/brew ]]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
@@ -336,7 +407,21 @@ if command -v pyenv >/dev/null 2>&1; then
   eval "$(pyenv init - zsh)"
 fi
 EOF_ZSH
-  then
+}
+
+write_shell_config() {
+  local zshrc="${HOME}/.zshrc"
+
+  if ! run_command mkdir -p "$CONFIG_HOME"; then
+    record_failure "终端配置目录创建失败"
+    return
+  fi
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf '[模拟执行] 写入 %s 并连接到 %s\n' "$MANAGED_ZSH_CONFIG" "$zshrc"
+    return 0
+  fi
+
+  if ! write_managed_shell_config "$MANAGED_ZSH_CONFIG"; then
     record_failure "终端配置写入失败"
     return
   fi
@@ -626,6 +711,7 @@ usage() {
 
 可选环境变量：
   MAC_DEV_PYTHON_VERSION  指定 pyenv 安装的 Python 版本，默认 3.12.2
+  MAC_DEV_HOMEBREW_MIRROR  Homebrew 下载源：china（默认）或 official
   NO_COLOR                禁用彩色输出
 EOF_USAGE
 }
@@ -667,13 +753,17 @@ main() {
 
   if [[ "$DRY_RUN" -eq 1 ]]; then
     print_plan
-    return 0
+    return $?
   fi
 
   printf '\nmac-dev-bootstrap %s\n' "$BOOTSTRAP_VERSION"
   printf '开始配置 Apple Silicon Mac 开发环境。\n\n'
 
   preflight || return 1
+  configure_homebrew_mirror || return 1
+  if [[ "$(homebrew_mirror_mode)" == "china" ]]; then
+    success "Homebrew 已启用国内镜像：清华 TUNA + 中科大 USTC"
+  fi
   install_homebrew || {
     error "Homebrew 安装失败，无法继续"
     return 1
