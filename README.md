@@ -94,6 +94,49 @@ Homebrew 默认直接使用国内镜像：Brew 与 Core 仓库走清华 TUNA，F
 
 Claude Code 优先执行 Anthropic 官方原生安装命令 `curl -fsSL https://claude.ai/install.sh | bash`。若安装 URL 返回 403、下载中断，或安装后 `claude --version` 验证失败，脚本会自动使用官方 Homebrew Cask `brew install --cask claude-code` 兜底，并再次验证命令可用性。
 
+## 迁移 Codex 到新电脑
+
+仓库提供 `scripts/codex-migrate.sh`，用于迁移 Codex 历史会话、归档会话、记忆、自动化任务、线程索引、历史输入、附件、生成图片、可视化产物、用户画像以及 Agent/规则。
+
+迁移前请先完全退出 Codex App 和正在运行的 Codex CLI，避免复制过程中继续写入。
+
+在旧电脑导出：
+
+    /bin/bash scripts/codex-migrate.sh export \
+      --output ~/Desktop/codex-migration.tar.gz
+
+导出后会得到两个文件，请一起传到新电脑：
+
+- `codex-migration.tar.gz`
+- `codex-migration.tar.gz.sha256`
+
+迁移包包含私人对话和记忆，未加密；即使排除了 Codex 登录状态，内容里仍可能存在你曾粘贴的密钥或其他敏感信息。应通过隔空投送、加密磁盘或其他可信方式传输，不要上传到公开仓库或公共网盘。
+
+在新电脑先安装并登录 Codex，然后完全退出 Codex，再检查并导入：
+
+    /bin/bash scripts/codex-migrate.sh inspect \
+      ~/Desktop/codex-migration.tar.gz
+
+    /bin/bash scripts/codex-migrate.sh import \
+      ~/Desktop/codex-migration.tar.gz
+
+导入前会在 `~/codex-backups/current-before-import-时间戳.tar.gz` 自动创建恢复包。导入完成后重新打开 Codex，等待本地索引完成。
+
+如果新电脑已经产生过对话，脚本默认拒绝替换其索引。先把新电脑也单独导出备份，确认允许用旧电脑索引替换后再执行：
+
+    /bin/bash scripts/codex-migrate.sh import \
+      ~/Desktop/codex-migration.tar.gz \
+      --replace-existing-indexes
+
+安全边界：
+
+- 永远不迁移或覆盖 `auth.json` 和系统钥匙串凭证，新电脑保持自己的登录状态。
+- 不迁移 `config.toml`、`hooks.json`、日志、缓存、插件缓存、`skills` 和浏览器数据；需要凭证的 MCP 与技能应在新电脑重新安装或配置。
+- 会话与内容目录采用合并恢复；线程、记忆和目标 SQLite 索引使用旧电脑的一致性快照替换，线程中的旧电脑绝对路径会重写为新电脑的 `CODEX_HOME`。
+- 所有导入数据库都会先在暂存目录完成 SQLite 完整性检查，再以同文件系统原子替换；校验失败不会触碰现有数据库。
+- 如果新电脑已经产生重要对话，建议先单独导出新电脑，再执行导入；自动恢复包可用于回滚。
+- `.sha256` 与归档内部校验和用于发现传输损坏，不是数字签名，不能证明归档来自可信来源。
+
 ## 设计原则
 
 - 脚本可重复运行，已经存在的软件会跳过。
@@ -108,8 +151,9 @@ Claude Code 优先执行 Anthropic 官方原生安装命令 `curl -fsSL https://
 
 ## 测试
 
-    bash -n install.sh scripts/doctor.sh tests/run.sh tests/security_test.sh tests/check_remote_shell_pipelines.sh
+    bash -n install.sh scripts/doctor.sh scripts/codex-migrate.sh tests/run.sh tests/security_test.sh tests/check_remote_shell_pipelines.sh tests/codex_migrate_test.sh
     bash tests/run.sh
     bash tests/security_test.sh
+    bash tests/codex_migrate_test.sh
 
 仓库使用 MIT License。
