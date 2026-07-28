@@ -3,7 +3,7 @@
 set -u
 set -o pipefail
 
-readonly BOOTSTRAP_VERSION="1.2.0"
+readonly BOOTSTRAP_VERSION="1.3.0"
 readonly CONFIG_HOME="${HOME}/.config/mac-dev-bootstrap"
 readonly MANAGED_ZSH_CONFIG="${CONFIG_HOME}/zshrc.zsh"
 readonly ZSH_SOURCE_LINE='[[ -f "$HOME/.config/mac-dev-bootstrap/zshrc.zsh" ]] && source "$HOME/.config/mac-dev-bootstrap/zshrc.zsh"'
@@ -13,6 +13,7 @@ readonly HOMEBREW_API_MIRROR="https://mirrors.ustc.edu.cn/homebrew-bottles/api"
 readonly HOMEBREW_BOTTLE_MIRROR="https://mirrors.ustc.edu.cn/homebrew-bottles"
 readonly HOMEBREW_BREW_GIT_OFFICIAL="https://github.com/Homebrew/brew"
 readonly HOMEBREW_CORE_GIT_OFFICIAL="https://github.com/Homebrew/homebrew-core"
+readonly LOCALSEND_ARTIFACT_MIRROR_DEFAULT="https://gh-proxy.com"
 
 DRY_RUN=0
 INSTALL_PROFILE=""
@@ -62,6 +63,10 @@ valid_python_version() {
 
 valid_homebrew_mirror() {
   [[ "$1" == "china" || "$1" == "official" ]]
+}
+
+valid_https_url() {
+  [[ "$1" =~ ^https:/{2}[^[:space:]]+$ ]]
 }
 
 valid_install_profile() {
@@ -140,6 +145,10 @@ homebrew_mirror_mode() {
   printf '%s\n' "${MAC_DEV_HOMEBREW_MIRROR:-china}"
 }
 
+localsend_artifact_mirror() {
+  printf '%s\n' "${MAC_DEV_LOCALSEND_MIRROR:-$LOCALSEND_ARTIFACT_MIRROR_DEFAULT}"
+}
+
 configure_homebrew_mirror() {
   local mode="${1:-$(homebrew_mirror_mode)}"
 
@@ -211,6 +220,7 @@ basic_casks() {
     ghostty \
     visual-studio-code \
     cc-switch \
+    localsend \
     font-hack-nerd-font \
     font-jetbrains-mono-nerd-font \
     font-maple-mono-nf-cn
@@ -320,6 +330,12 @@ print_plan() {
   formulae | sed 's/^/  - /'
   printf '[模拟执行] Homebrew Cask：\n'
   casks | sed 's/^/  - /'
+  if ! valid_https_url "$(localsend_artifact_mirror)"; then
+    error "MAC_DEV_LOCALSEND_MIRROR 必须是 HTTPS URL"
+    return 1
+  fi
+  printf '[模拟执行] LocalSend 官方源失败后使用镜像：%s\n' \
+    "$(localsend_artifact_mirror)"
   printf '[模拟执行] npm 全局包：\n'
   npm_global_packages | sed 's/^/  - /'
   printf '[模拟执行] 其他工具：Oh My Zsh、Bun、Claude Code、Grok Build、mcp-clickhouse\n'
@@ -343,6 +359,10 @@ preflight() {
   fi
   if ! valid_homebrew_mirror "$(homebrew_mirror_mode)"; then
     error "MAC_DEV_HOMEBREW_MIRROR 仅支持 china 或 official"
+    return 1
+  fi
+  if ! valid_https_url "$(localsend_artifact_mirror)"; then
+    error "MAC_DEV_LOCALSEND_MIRROR 必须是 HTTPS URL"
     return 1
   fi
   success "平台检查通过：${os_name}/${architecture}"
@@ -411,9 +431,34 @@ cask_app_path() {
     ghostty) printf '%s\n' "/Applications/Ghostty.app" ;;
     visual-studio-code) printf '%s\n' "/Applications/Visual Studio Code.app" ;;
     cc-switch) printf '%s\n' "/Applications/CC Switch.app" ;;
+    localsend) printf '%s\n' "/Applications/LocalSend.app" ;;
     orbstack) printf '%s\n' "/Applications/OrbStack.app" ;;
     *) return 1 ;;
   esac
+}
+
+install_cask_package() {
+  local cask="$1"
+  local mirror
+
+  if run_command brew install --cask "$cask"; then
+    return 0
+  fi
+  if [[ "$cask" != "localsend" ]]; then
+    return 1
+  fi
+
+  mirror="$(localsend_artifact_mirror)"
+  if ! valid_https_url "$mirror"; then
+    error "MAC_DEV_LOCALSEND_MIRROR 必须是 HTTPS URL"
+    return 1
+  fi
+
+  warn "LocalSend 官方源安装失败，尝试 GitHub Release 镜像"
+  run_command env \
+    HOMEBREW_ARTIFACT_DOMAIN="$mirror" \
+    HOMEBREW_ARTIFACT_DOMAIN_NO_FALLBACK=1 \
+    brew install --cask --require-sha localsend
 }
 
 install_casks() {
@@ -426,7 +471,7 @@ install_casks() {
       success "Cask 已安装：$cask"
     elif [[ -n "$app_path" && -d "$app_path" ]]; then
       success "应用已存在：$app_path"
-    elif run_command brew install --cask "$cask"; then
+    elif install_cask_package "$cask"; then
       success "Cask 安装完成：$cask"
     else
       record_failure "Cask 安装失败：$cask"
@@ -827,7 +872,8 @@ basic_doctor_apps() {
     "/Applications/ChatGPT.app" \
     "/Applications/Ghostty.app" \
     "/Applications/Visual Studio Code.app" \
-    "/Applications/CC Switch.app"
+    "/Applications/CC Switch.app" \
+    "/Applications/LocalSend.app"
 }
 
 standard_doctor_apps() {
@@ -889,6 +935,7 @@ usage() {
 可选环境变量：
   MAC_DEV_PYTHON_VERSION  指定 pyenv 安装的 Python 版本，默认 3.12.2
   MAC_DEV_HOMEBREW_MIRROR  Homebrew 下载源：china（默认）或 official
+  MAC_DEV_LOCALSEND_MIRROR  LocalSend 官方源失败后的 HTTPS 镜像
   MAC_DEV_PROFILE         安装档位：basic、standard 或 full
   NO_COLOR                禁用彩色输出
 EOF_USAGE

@@ -176,6 +176,8 @@ test_install_profile_contract() {
     assert_not_contains "基础档位不含适中 Formula" "$list" "$item"
   done
   assert_not_contains "基础档位不含 OrbStack" "$(casks)" "orbstack"
+  assert_contains "基础档位包含 LocalSend" "$(casks)" "localsend"
+  assert_contains "基础 doctor 检查 LocalSend 应用" "$(doctor_apps)" "/Applications/LocalSend.app"
   assert_not_contains "基础 doctor 不检查 Azure CLI" "$(doctor_commands)" "az"
 
   INSTALL_PROFILE="standard"
@@ -359,6 +361,43 @@ test_claude_installer_contract() {
   fi
 }
 
+test_localsend_installer_fallback() {
+  local output
+  if output="$({
+    install_attempt=0
+    run_command() {
+      install_attempt=$((install_attempt + 1))
+      printf '安装命令：%s\n' "$*"
+      [[ "$install_attempt" -eq 2 ]]
+    }
+    install_cask_package localsend
+  } 2>&1)" && \
+    printf '%s\n' "$output" | grep -Fq \
+      '安装命令：brew install --cask localsend' && \
+    printf '%s\n' "$output" | grep -Fq \
+      '安装命令：env HOMEBREW_ARTIFACT_DOMAIN=https://gh-proxy.com HOMEBREW_ARTIFACT_DOMAIN_NO_FALLBACK=1 brew install --cask --require-sha localsend'; then
+    pass "LocalSend 官方源失败后通过镜像重试并强制校验"
+  else
+    fail "LocalSend 官方源失败后通过镜像重试并强制校验"
+  fi
+
+  if (
+    run_command() {
+      if [[ "$*" == "brew install --cask localsend" ]]; then
+        return 1
+      fi
+      printf '不应执行非法镜像：%s\n' "$*"
+      return 0
+    }
+    MAC_DEV_LOCALSEND_MIRROR='http://mirror.example'
+    install_cask_package localsend >/dev/null 2>&1
+  ); then
+    fail "LocalSend 拒绝非 HTTPS 镜像"
+  else
+    pass "LocalSend 拒绝非 HTTPS 镜像"
+  fi
+}
+
 test_claude_installer_fallback() {
   local output
   if output="$({
@@ -530,7 +569,7 @@ test_cask_manifest() {
   local list
   list="$(casks)"
   local item
-  for item in google-chrome feishu chatgpt ghostty visual-studio-code cc-switch font-hack-nerd-font font-jetbrains-mono-nerd-font font-maple-mono-nf-cn; do
+  for item in google-chrome feishu chatgpt ghostty visual-studio-code cc-switch localsend font-hack-nerd-font font-jetbrains-mono-nerd-font font-maple-mono-nf-cn; do
     assert_contains "Cask 清单" "$list" "$item"
   done
 }
@@ -543,6 +582,7 @@ test_brewfile_profile_manifest() {
   basic_manifest="$(sed -n 's/^[[:space:]]*brew "\([^"]*\)".*/\1/p; s/^[[:space:]]*cask "\([^"]*\)".*/\1/p' "$ROOT_DIR/Brewfile")"
   standard_manifest="$(sed -n 's/^[[:space:]]*brew "\([^"]*\)".*/\1/p; s/^[[:space:]]*cask "\([^"]*\)".*/\1/p' "$ROOT_DIR/Brewfile.standard" 2>/dev/null || true)"
 
+  assert_contains "基础 Brewfile 包含 LocalSend" "$basic_manifest" "localsend"
   for item in azure-cli awscli kubernetes-cli docker glab supabase go cloudflared orbstack; do
     assert_not_contains "基础 Brewfile 不含适中工具" "$basic_manifest" "$item"
     assert_contains "适中 Brewfile 包含新增工具" "$standard_manifest" "$item"
@@ -635,6 +675,7 @@ test_homebrew_mirror_contract
 test_homebrew_mirror_installer
 test_homebrew_initialization_failure
 test_homebrew_mirror_shell_config
+test_localsend_installer_fallback
 test_claude_installer_contract
 test_claude_installer_fallback
 test_claude_installer_verification

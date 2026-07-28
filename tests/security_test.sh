@@ -47,6 +47,7 @@ while IFS= read -r url; do
     https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git|\
     https://mirrors.ustc.edu.cn/homebrew-bottles|\
     https://mirrors.ustc.edu.cn/homebrew-bottles/api|\
+    https://gh-proxy.com|\
     https://github.com/Homebrew/brew|\
     https://github.com/Homebrew/homebrew-core|\
     https://github.com/ohmyzsh/*|\

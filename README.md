@@ -35,7 +35,7 @@ Homebrew 默认直接使用国内镜像：Brew 与 Core 仓库走清华 TUNA，F
 ## 基础档位内容
 
 - Homebrew
-- Chrome、飞书、Codex Desktop、Ghostty、VS Code、CC Switch
+- Chrome、飞书、Codex Desktop、Ghostty、VS Code、CC Switch、LocalSend
 - Git、Git LFS、GitHub CLI
 - Oh My Zsh 及 autosuggestions、syntax-highlighting、completions
 - Hack、JetBrains Mono、Maple Mono Nerd Font
@@ -91,6 +91,8 @@ Homebrew 默认直接使用国内镜像：Brew 与 Core 仓库走清华 TUNA，F
     brew update
 
 说明：Homebrew Cask 中部分应用的安装包由软件厂商自行托管，这些下载仍可能访问厂商的官方地址。
+
+LocalSend 会先通过官方 Homebrew Cask 安装。若 GitHub Releases 下载失败，脚本会临时通过 `https://gh-proxy.com` 镜像重试，并要求 Homebrew 使用 Cask 中的 SHA-256 校验下载文件；该镜像仅作用于本次 LocalSend 重试。可用 `MAC_DEV_LOCALSEND_MIRROR=https://你的镜像地址 /bin/bash install.sh` 替换默认镜像。
 
 Claude Code 优先执行 Anthropic 官方原生安装命令 `curl -fsSL https://claude.ai/install.sh | bash`。若安装 URL 返回 403、下载中断，或安装后 `claude --version` 验证失败，脚本会自动使用官方 Homebrew Cask `brew install --cask claude-code` 兜底，并再次验证命令可用性。
 
