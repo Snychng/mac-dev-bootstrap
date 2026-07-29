@@ -16,6 +16,29 @@ Homebrew 默认直接使用国内镜像：Brew 与 Core 仓库走清华 TUNA，F
 
     curl -fsSL https://raw.githubusercontent.com/Snychng/mac-dev-bootstrap/main/install.sh | less
 
+## 轻量 TUI
+
+在交互式终端中，安装脚本会自动启用纯 Bash TUI，无需提前安装 Node.js、Python、Go、Rust 或额外界面库：
+
+- 开始安装前按命令、应用、Codex MCP、插件和 Skill 列出“已安装 / 未安装”状态。
+- 安装期间显示当前阶段、总阶段数和 `0%` 到 `100%` 的进度条。
+- 每个具体工具仍会输出“已安装、安装完成、缺失或失败”，不会隐藏 Homebrew 等安装器的重要日志和密码提示。
+- 某个工具失败时继续处理其他项目，阶段标记为“部分失败”，最终再次检查并汇总缺失项。
+
+百分比按已完成安装阶段计算，用来反映流程完成度；由于 Homebrew Formula、桌面应用等阶段耗时不同，它不是剩余时间估算。
+
+脚本输出被重定向或运行在 CI 中时会自动退回普通日志。也可以手动切换：
+
+    /bin/bash install.sh --tui
+    /bin/bash install.sh --no-tui
+
+环境变量方式：
+
+    MAC_DEV_TUI=always /bin/bash install.sh
+    MAC_DEV_TUI=never /bin/bash install.sh
+
+`MAC_DEV_TUI=auto` 是默认值；`NO_COLOR=1` 只关闭颜色，不关闭进度界面。
+
 ## 安装档位
 
 三个档位采用逐级包含关系：

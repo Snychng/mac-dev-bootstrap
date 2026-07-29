@@ -705,6 +705,140 @@ test_claude_installer_verification() {
   fi
 }
 
+test_tui_contract() {
+  local output
+  local original_profile="${INSTALL_PROFILE-}"
+  local original_tui_mode="${TUI_MODE-auto}"
+
+  TUI_MODE="always"
+  assert_true "TUI 可被命令行强制启用" tui_enabled
+  TUI_MODE="never"
+  if tui_enabled; then
+    fail "TUI 可被命令行关闭"
+  else
+    pass "TUI 可被命令行关闭"
+  fi
+
+  TUI_MODE="auto"
+  if parse_args --tui && [[ "$TUI_MODE" == "always" ]]; then
+    pass "命令行参数可强制启用 TUI"
+  else
+    fail "命令行参数可强制启用 TUI"
+  fi
+  TUI_MODE="auto"
+  if parse_args --no-tui && [[ "$TUI_MODE" == "never" ]]; then
+    pass "命令行参数可禁用 TUI"
+  else
+    fail "命令行参数可禁用 TUI"
+  fi
+  TUI_MODE="invalid"
+  if parse_args >/dev/null 2>&1; then
+    fail "拒绝非法 TUI 模式"
+  else
+    pass "拒绝非法 TUI 模式"
+  fi
+
+  TUI_MODE="always"
+  NO_COLOR=1
+  TUI_TOTAL_STAGES=4
+  TUI_COMPLETED_STAGES=1
+  output="$(tui_print_progress "安装 Homebrew" "active")"
+  if printf '%s\n' "$output" | grep -Fq '25%' && \
+    printf '%s\n' "$output" | grep -Fq '1/4' && \
+    printf '%s\n' "$output" | grep -Fq '安装 Homebrew'; then
+    pass "TUI 进度条展示百分比与阶段数"
+  else
+    fail "TUI 进度条展示百分比与阶段数"
+  fi
+
+  INSTALL_PROFILE="basic"
+  assert_not_contains "基础档位 TUI 不显示完整档专属阶段" \
+    "$(install_stage_labels)" "安装 Codex 插件"
+  INSTALL_PROFILE="standard"
+  assert_contains "适中档位 TUI 显示 MCP 阶段" \
+    "$(install_stage_labels)" "配置 Codex MCP"
+  INSTALL_PROFILE="full"
+  assert_contains "完整档位 TUI 显示插件阶段" \
+    "$(install_stage_labels)" "安装 Codex 插件"
+  assert_contains "完整档位 TUI 显示人工应用阶段" \
+    "$(install_stage_labels)" "检查 App Store 应用"
+
+  INSTALL_PROFILE="basic"
+  output="$({
+    doctor_commands() {
+      printf '%s\n' available-command missing-command
+    }
+    doctor_apps() {
+      printf '%s\n' "/Applications/Available.app" "/Applications/Missing.app"
+    }
+    command_exists() {
+      [[ "$1" == "available-command" ]]
+    }
+    setup_runtime_paths() { return 0; }
+    print_install_inventory
+  } 2>&1)"
+  if printf '%s\n' "$output" | grep -Fq '已安装 1' && \
+    printf '%s\n' "$output" | grep -Fq '未安装 3' && \
+    printf '%s\n' "$output" | grep -Fq 'available-command' && \
+    printf '%s\n' "$output" | grep -Fq 'missing-command' && \
+    printf '%s\n' "$output" | grep -Fq '/Applications/Missing.app'; then
+    pass "TUI 安装前清单区分已安装与未安装"
+  else
+    fail "TUI 安装前清单区分已安装与未安装"
+  fi
+
+  output="$({
+    TUI_MODE="always"
+    NO_COLOR=1
+    TUI_TOTAL_STAGES=1
+    TUI_COMPLETED_STAGES=0
+    FAILED_STEPS=()
+    failing_stage() {
+      record_failure "模拟安装失败"
+      return 0
+    }
+    run_install_stage "模拟阶段" failing_stage
+  } 2>&1)"
+  if printf '%s\n' "$output" | grep -Fq '100%' && \
+    printf '%s\n' "$output" | grep -Fq '部分失败' && \
+    [[ "$(printf '%s\n' "$output" | grep -Fc '模拟阶段')" -ge 2 ]]; then
+    pass "TUI 失败阶段仍推进进度并明确标记"
+  else
+    fail "TUI 失败阶段仍推进进度并明确标记"
+  fi
+
+  output="$({
+    preflight() { return 0; }
+    print_install_inventory() { return 0; }
+    configure_homebrew_mirror() { return 0; }
+    homebrew_mirror_mode() { printf 'official\n'; }
+    install_homebrew() { return 0; }
+    install_formulae() { return 0; }
+    install_casks() { return 0; }
+    configure_terminal_stage() { return 0; }
+    install_javascript_stage() { return 0; }
+    setup_python() { return 0; }
+    install_native_ai_tools() { return 0; }
+    install_clickhouse_mcp() { return 0; }
+    install_vscode_extensions() { return 0; }
+    write_editor_configs() { return 0; }
+    doctor() { return 0; }
+    INSTALL_PROFILE=""
+    FAILED_STEPS=()
+    main --profile basic --tui
+  } 2>&1)"
+  if printf '%s\n' "$output" | grep -Eq '100% +13/13' && \
+    printf '%s\n' "$output" | grep -Fq '开发环境安装并验证完成'; then
+    pass "基础档位 TUI 完整流程准确到达 100%"
+  else
+    fail "基础档位 TUI 完整流程准确到达 100%"
+  fi
+
+  unset NO_COLOR
+  INSTALL_PROFILE="$original_profile"
+  TUI_MODE="$original_tui_mode"
+}
+
 test_remote_shell_pipeline_policy() {
   local checker="$ROOT_DIR/tests/check_remote_shell_pipelines.sh"
   local temporary_directory
@@ -957,6 +1091,7 @@ test_localsend_installer_fallback
 test_claude_installer_contract
 test_claude_installer_fallback
 test_claude_installer_verification
+test_tui_contract
 test_remote_shell_pipeline_policy
 test_formula_manifest
 test_cask_manifest

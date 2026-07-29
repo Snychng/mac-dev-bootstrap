@@ -3,7 +3,7 @@
 set -u
 set -o pipefail
 
-readonly BOOTSTRAP_VERSION="2.0.0"
+readonly BOOTSTRAP_VERSION="2.1.0"
 readonly BOOTSTRAP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly CONFIG_HOME="${HOME}/.config/mac-dev-bootstrap"
 readonly MANAGED_ZSH_CONFIG="${CONFIG_HOME}/zshrc.zsh"
@@ -21,6 +21,9 @@ readonly LOCALSEND_ARTIFACT_MIRROR_DEFAULT="https://gh-proxy.com"
 DRY_RUN=0
 INSTALL_PROFILE=""
 FAILED_STEPS=()
+TUI_MODE="${MAC_DEV_TUI:-auto}"
+TUI_TOTAL_STAGES=0
+TUI_COMPLETED_STAGES=0
 
 color_enabled() {
   [[ -t 1 && -z "${NO_COLOR:-}" ]]
@@ -50,6 +53,167 @@ warn() {
 
 error() {
   print_color "1;31" "✗ $*" >&2
+}
+
+tui_enabled() {
+  case "${TUI_MODE:-auto}" in
+    always) return 0 ;;
+    never) return 1 ;;
+    auto)
+      [[ -t 1 && "${TERM:-}" != "dumb" ]]
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+valid_tui_mode() {
+  [[ "$1" == "auto" || "$1" == "always" || "$1" == "never" ]]
+}
+
+tui_inline_color() {
+  local color="$1"
+  shift
+  if color_enabled; then
+    printf '\033[%sm%s\033[0m' "$color" "$*"
+  else
+    printf '%s' "$*"
+  fi
+}
+
+tui_print_header() {
+  tui_enabled || return 0
+
+  printf '\n'
+  tui_inline_color "1;36" "╭────────────────────────────────────────────────────────────"
+  printf '\n'
+  tui_inline_color "1;36" "│"
+  printf '  mac-dev-bootstrap %s\n' "$BOOTSTRAP_VERSION"
+  tui_inline_color "1;36" "│"
+  printf '  %s档 · Apple Silicon macOS · %d 个阶段\n' \
+    "$(profile_label)" "$TUI_TOTAL_STAGES"
+  tui_inline_color "1;36" "╰────────────────────────────────────────────────────────────"
+  printf '\n'
+}
+
+install_stage_labels() {
+  printf '%s\n' \
+    "平台与参数检查" \
+    "配置 Homebrew 镜像" \
+    "安装 Homebrew" \
+    "安装 Homebrew Formula" \
+    "安装桌面应用与字体"
+  if profile_includes_full; then
+    printf '%s\n' "安装原生工具链"
+  fi
+  printf '%s\n' \
+    "配置终端环境" \
+    "安装 JavaScript 工具" \
+    "配置 Python 环境" \
+    "安装 AI 命令行工具" \
+    "安装 ClickHouse MCP"
+  if profile_includes_standard; then
+    printf '%s\n' "配置 Codex MCP"
+  fi
+  if profile_includes_full; then
+    printf '%s\n' \
+      "安装 Codex 插件" \
+      "安装 Codex Skills"
+  fi
+  printf '%s\n' \
+    "安装 VS Code 扩展" \
+    "写入编辑器配置"
+  if profile_includes_full; then
+    printf '%s\n' "检查 App Store 应用"
+  fi
+  printf '%s\n' "验证安装结果"
+}
+
+tui_initialize_progress() {
+  local label
+  TUI_TOTAL_STAGES=0
+  TUI_COMPLETED_STAGES=0
+  while IFS= read -r label; do
+    [[ -n "$label" ]] || continue
+    TUI_TOTAL_STAGES=$((TUI_TOTAL_STAGES + 1))
+  done < <(install_stage_labels)
+}
+
+tui_print_progress() {
+  local label="$1"
+  local state="${2:-active}"
+  local total="${TUI_TOTAL_STAGES:-0}"
+  local completed="${TUI_COMPLETED_STAGES:-0}"
+  local percent=0
+  local width=24
+  local filled=0
+  local empty=0
+  local bar=""
+  local index=0
+  local marker="●"
+  local state_label="进行中"
+  local state_color="1;36"
+
+  tui_enabled || return 0
+  if [[ "$total" -gt 0 ]]; then
+    percent=$((completed * 100 / total))
+  fi
+  filled=$((percent * width / 100))
+  empty=$((width - filled))
+  while [[ "$index" -lt "$filled" ]]; do
+    bar="${bar}█"
+    index=$((index + 1))
+  done
+  index=0
+  while [[ "$index" -lt "$empty" ]]; do
+    bar="${bar}░"
+    index=$((index + 1))
+  done
+
+  case "$state" in
+    done)
+      marker="✓"
+      state_label="完成"
+      state_color="1;32"
+      ;;
+    warning)
+      marker="!"
+      state_label="部分失败"
+      state_color="1;33"
+      ;;
+    failed)
+      marker="✗"
+      state_label="失败"
+      state_color="1;31"
+      ;;
+  esac
+
+  printf '  '
+  tui_inline_color "2;37" "[${bar}]"
+  printf ' %3d%%  %d/%d  ' "$percent" "$completed" "$total"
+  tui_inline_color "$state_color" "${marker} ${state_label}"
+  printf '  %s\n' "$label"
+}
+
+run_install_stage() {
+  local label="$1"
+  shift
+  local failures_before="${#FAILED_STEPS[@]}"
+  local failures_after
+  local status=0
+
+  tui_print_progress "$label" "active"
+  "$@" || status=$?
+  failures_after="${#FAILED_STEPS[@]}"
+  TUI_COMPLETED_STAGES=$((TUI_COMPLETED_STAGES + 1))
+
+  if [[ "$status" -ne 0 ]]; then
+    tui_print_progress "$label" "failed"
+  elif [[ "$failures_after" -gt "$failures_before" ]]; then
+    tui_print_progress "$label" "warning"
+  else
+    tui_print_progress "$label" "done"
+  fi
+  return "$status"
 }
 
 command_exists() {
@@ -99,11 +263,25 @@ prompt_install_profile() {
   local selected_profile
 
   while true; do
-    printf '\n请选择安装档位：\n'
-    printf '  1) 基础：当前通用开发环境\n'
-    printf '  2) 适中：基础 + 云平台、容器、Clash Verge 与 Codex MCP\n'
-    printf '  3) 完整：适中 + 原生工具链、桌面应用、插件与 Skills\n'
-    printf '请输入 1、2 或 3（默认 1）：'
+    if tui_enabled; then
+      printf '\n'
+      tui_inline_color "1;36" "╭─ 选择安装档位"
+      printf '\n'
+      tui_inline_color "1;36" "│"
+      printf '  1  基础  · 当前通用开发环境\n'
+      tui_inline_color "1;36" "│"
+      printf '  2  适中  · 基础 + 云平台、容器、Clash Verge 与 Codex MCP\n'
+      tui_inline_color "1;36" "│"
+      printf '  3  完整  · 适中 + 原生工具链、桌面应用、插件与 Skills\n'
+      tui_inline_color "1;36" "╰─"
+      printf ' 请输入 1、2 或 3（默认 1）：'
+    else
+      printf '\n请选择安装档位：\n'
+      printf '  1) 基础：当前通用开发环境\n'
+      printf '  2) 适中：基础 + 云平台、容器、Clash Verge 与 Codex MCP\n'
+      printf '  3) 完整：适中 + 原生工具链、桌面应用、插件与 Skills\n'
+      printf '请输入 1、2 或 3（默认 1）：'
+    fi
 
     if ! IFS= read -r selection; then
       selection=""
@@ -1506,6 +1684,95 @@ skill_installed() {
      -d "${HOME}/.claude/skills/${skill_name}" ]]
 }
 
+print_install_inventory() {
+  local installed_items=()
+  local missing_items=()
+  local item
+  local plugin_name
+
+  tui_enabled || return 0
+  setup_runtime_paths
+
+  while IFS= read -r item; do
+    [[ -n "$item" ]] || continue
+    if command_exists "$item"; then
+      installed_items[${#installed_items[@]}]="命令 · $item"
+    else
+      missing_items[${#missing_items[@]}]="命令 · $item"
+    fi
+  done < <(doctor_commands)
+
+  while IFS= read -r item; do
+    [[ -n "$item" ]] || continue
+    if [[ -d "$item" ]]; then
+      installed_items[${#installed_items[@]}]="应用 · $item"
+    else
+      missing_items[${#missing_items[@]}]="应用 · $item"
+    fi
+  done < <(doctor_apps)
+
+  if profile_includes_standard; then
+    while IFS= read -r item; do
+      [[ -n "$item" ]] || continue
+      if codex_mcp_registered "$item"; then
+        installed_items[${#installed_items[@]}]="Codex MCP · $item"
+      else
+        missing_items[${#missing_items[@]}]="Codex MCP · $item"
+      fi
+    done < <(codex_mcp_servers)
+  fi
+
+  if profile_includes_full; then
+    while IFS= read -r item; do
+      [[ -n "$item" ]] || continue
+      if codex_plugin_installed "$item"; then
+        installed_items[${#installed_items[@]}]="Codex 插件 · $item"
+      else
+        missing_items[${#missing_items[@]}]="Codex 插件 · $item"
+      fi
+    done < <(codex_plugins)
+
+    for plugin_name in lark-base find-skills create-colleague last30days; do
+      if skill_installed "$plugin_name"; then
+        installed_items[${#installed_items[@]}]="Skill · $plugin_name"
+      else
+        missing_items[${#missing_items[@]}]="Skill · $plugin_name"
+      fi
+    done
+  fi
+
+  printf '\n'
+  tui_inline_color "1;37" "安装前状态"
+  printf '  '
+  tui_inline_color "1;32" "已安装 ${#installed_items[@]}"
+  printf '  ·  '
+  tui_inline_color "1;33" "未安装 ${#missing_items[@]}"
+  printf '\n'
+
+  if [[ "${#installed_items[@]}" -gt 0 ]]; then
+    printf '\n'
+    tui_inline_color "1;32" "  ✓ 已安装"
+    printf '\n'
+    for item in "${installed_items[@]}"; do
+      printf '    '
+      tui_inline_color "32" "✓"
+      printf ' %s\n' "$item"
+    done
+  fi
+
+  if [[ "${#missing_items[@]}" -gt 0 ]]; then
+    printf '\n'
+    tui_inline_color "1;33" "  ○ 未安装"
+    printf '\n'
+    for item in "${missing_items[@]}"; do
+      printf '    '
+      tui_inline_color "33" "○"
+      printf ' %s\n' "$item"
+    done
+  fi
+  printf '\n'
+}
+
 doctor() {
   local failures=0
   local item
@@ -1567,6 +1834,25 @@ doctor() {
   return "$failures"
 }
 
+install_native_toolchains_stage() {
+  install_rust_toolchain
+  install_android_sdk
+  return 0
+}
+
+configure_terminal_stage() {
+  install_oh_my_zsh
+  write_shell_config
+  return 0
+}
+
+install_javascript_stage() {
+  install_bun
+  setup_runtime_paths
+  install_npm_packages
+  return 0
+}
+
 usage() {
   cat <<'EOF_USAGE'
 用法：install.sh [选项]
@@ -1574,6 +1860,8 @@ usage() {
   --dry-run   仅打印安装计划，不修改电脑
   --doctor    仅检查环境是否安装完整
   --profile PROFILE  安装档位：basic、standard 或 full
+  --tui       强制启用轻量 TUI
+  --no-tui    禁用 TUI，使用普通日志
   --help      显示帮助
 
 可选环境变量：
@@ -1581,6 +1869,7 @@ usage() {
   MAC_DEV_HOMEBREW_MIRROR  Homebrew 下载源：china（默认）或 official
   MAC_DEV_LOCALSEND_MIRROR  LocalSend 官方源失败后的 HTTPS 镜像
   MAC_DEV_PROFILE         安装档位：basic、standard 或 full
+  MAC_DEV_TUI             TUI 模式：auto（默认）、always 或 never
   NO_COLOR                禁用彩色输出
 EOF_USAGE
 }
@@ -1592,6 +1881,8 @@ parse_args() {
     case "$1" in
       --dry-run) DRY_RUN=1 ;;
       --doctor) requested_action="doctor" ;;
+      --tui) TUI_MODE="always" ;;
+      --no-tui) TUI_MODE="never" ;;
       --profile)
         if [[ "$#" -lt 2 ]]; then
           error "--profile 需要 basic、standard 或 full"
@@ -1614,6 +1905,10 @@ parse_args() {
     error "安装档位仅支持 basic、standard 或 full"
     return 2
   fi
+  if ! valid_tui_mode "$TUI_MODE"; then
+    error "MAC_DEV_TUI 仅支持 auto、always 或 never"
+    return 2
+  fi
 
   case "$requested_action" in
     install) return 0 ;;
@@ -1624,6 +1919,7 @@ parse_args() {
 
 main() {
   local parse_status=0
+  local doctor_status=0
   parse_args "$@" || parse_status=$?
   case "$parse_status" in
     0|10) ;;
@@ -1652,38 +1948,50 @@ main() {
     return $?
   fi
 
-  printf '\nmac-dev-bootstrap %s\n' "$BOOTSTRAP_VERSION"
-  printf '开始配置 Apple Silicon Mac 开发环境。\n\n'
-  success "安装档位：$(profile_label)"
+  tui_initialize_progress
+  if tui_enabled; then
+    tui_print_header
+  else
+    printf '\nmac-dev-bootstrap %s\n' "$BOOTSTRAP_VERSION"
+    printf '开始配置 Apple Silicon Mac 开发环境。\n\n'
+    success "安装档位：$(profile_label)"
+  fi
 
-  preflight || return 1
-  configure_homebrew_mirror || return 1
+  run_install_stage "平台与参数检查" preflight || return 1
+  print_install_inventory
+  run_install_stage "配置 Homebrew 镜像" configure_homebrew_mirror || return 1
   if [[ "$(homebrew_mirror_mode)" == "china" ]]; then
     success "Homebrew 已启用国内镜像：清华 TUNA + 中科大 USTC"
   fi
-  install_homebrew || {
+  run_install_stage "安装 Homebrew" install_homebrew || {
     error "Homebrew 安装失败，无法继续"
     return 1
   }
 
-  install_formulae
-  install_casks
-  install_rust_toolchain
-  install_android_sdk
-  install_oh_my_zsh
-  write_shell_config
-  install_bun
-  setup_runtime_paths
-  install_npm_packages
-  setup_python
-  install_native_ai_tools
-  install_clickhouse_mcp
-  configure_codex_mcp
-  install_codex_plugins
-  install_skill_packages
-  install_vscode_extensions
-  write_editor_configs
-  print_manual_app_store_steps
+  run_install_stage "安装 Homebrew Formula" install_formulae
+  run_install_stage "安装桌面应用与字体" install_casks
+  if profile_includes_full; then
+    run_install_stage "安装原生工具链" install_native_toolchains_stage
+  fi
+  run_install_stage "配置终端环境" configure_terminal_stage
+  run_install_stage "安装 JavaScript 工具" install_javascript_stage
+  run_install_stage "配置 Python 环境" setup_python
+  run_install_stage "安装 AI 命令行工具" install_native_ai_tools
+  run_install_stage "安装 ClickHouse MCP" install_clickhouse_mcp
+  if profile_includes_standard; then
+    run_install_stage "配置 Codex MCP" configure_codex_mcp
+  fi
+  if profile_includes_full; then
+    run_install_stage "安装 Codex 插件" install_codex_plugins
+    run_install_stage "安装 Codex Skills" install_skill_packages
+  fi
+  run_install_stage "安装 VS Code 扩展" install_vscode_extensions
+  run_install_stage "写入编辑器配置" write_editor_configs
+  if profile_includes_full; then
+    run_install_stage "检查 App Store 应用" print_manual_app_store_steps
+  fi
+
+  run_install_stage "验证安装结果" doctor || doctor_status=$?
 
   printf '\n'
   if [[ "${#FAILED_STEPS[@]}" -gt 0 ]]; then
@@ -1693,7 +2001,7 @@ main() {
     return 1
   fi
 
-  if doctor; then
+  if [[ "$doctor_status" -eq 0 ]]; then
     printf '\n'
     success "开发环境安装并验证完成"
     printf '请重新打开 Ghostty，然后分别登录 GitHub、飞书、Codex、Claude、Gemini、Grok Build 和 CC Switch。\n'
