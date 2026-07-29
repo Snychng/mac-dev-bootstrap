@@ -9,3 +9,4 @@ brew "go"
 brew "cloudflared"
 
 cask "orbstack"
+cask "clash-verge-rev"

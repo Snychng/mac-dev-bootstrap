@@ -14,6 +14,7 @@ brew "fzf"
 brew "fd"
 brew "tree"
 brew "coreutils"
+brew "starship"
 brew "gemini-cli"
 brew "ansible"
 

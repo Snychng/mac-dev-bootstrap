@@ -52,6 +52,7 @@ while IFS= read -r url; do
     https://github.com/Homebrew/homebrew-core|\
     https://github.com/ohmyzsh/*|\
     https://github.com/zsh-users/*|\
+    https://apps.apple.com/*|\
     https://bun.com/*|\
     https://claude.ai/*|\
     https://x.ai/*)

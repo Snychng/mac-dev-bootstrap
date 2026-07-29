@@ -1,6 +1,6 @@
 # mac-dev-bootstrap
 
-面向 Apple Silicon 新 Mac 的开发环境一键安装脚本。启动时可选择基础、适中或完整档位，按需安装团队需要的桌面应用、终端环境、语言运行时、AI 编程 CLI、云平台工具、MCP 服务和 VS Code 扩展。
+面向 Apple Silicon 新 Mac 的开发环境一键安装脚本。启动时可选择基础、适中或完整档位，按需安装团队需要的桌面应用、终端环境、语言运行时、AI 编程 CLI、云平台工具、MCP 服务、Codex 插件/Skills 和 VS Code 扩展。
 
 ## 一行安装
 
@@ -20,9 +20,9 @@ Homebrew 默认直接使用国内镜像：Brew 与 Core 仓库走清华 TUNA，F
 
 三个档位采用逐级包含关系：
 
-- **基础（basic）**：当前通用开发环境，包含下面列出的全部原有工具。
-- **适中（standard）**：基础 + Azure CLI、AWS CLI、kubectl、Docker CLI、OrbStack、GitLab CLI、Supabase CLI、Go 和 cloudflared。
-- **完整（full）**：当前继承适中档位，并预留后续完整工具集扩展入口。
+- **基础（basic）**：通用开发环境、Starship 终端体验和常用 AI 编程工具。
+- **适中（standard）**：完整继承基础档位，再加入云平台、容器、部署工具、Clash Verge 与 Codex MCP 注册。
+- **完整（full）**：完整继承适中档位，再加入移动端/原生工具链、完整开发扩展、桌面应用、Codex 插件和可重装 Skills。
 
 交互安装时输入 `1`、`2` 或 `3`。自动化环境可直接指定档位：
 
@@ -30,7 +30,13 @@ Homebrew 默认直接使用国内镜像：Brew 与 Core 仓库走清华 TUNA，F
 
 非交互环境未指定档位时默认使用 `basic`，避免自动扩大安装范围。
 
-直接使用 Homebrew Bundle 时，`Brewfile` 对应基础档位，`Brewfile.standard` 是适中/完整档位的增量清单。
+直接使用 Homebrew Bundle 时，三个清单同样采用逐级叠加：
+
+    brew bundle --file Brewfile
+    brew bundle --file Brewfile.standard
+    brew bundle --file Brewfile.full
+
+安装适中档位需依次执行前两个文件；安装完整档位需依次执行三个文件。
 
 ## 基础档位内容
 
@@ -38,6 +44,8 @@ Homebrew 默认直接使用国内镜像：Brew 与 Core 仓库走清华 TUNA，F
 - Chrome、飞书、Codex Desktop、Ghostty、VS Code、CC Switch、LocalSend
 - Git、Git LFS、GitHub CLI
 - Oh My Zsh 及 autosuggestions、syntax-highlighting、completions
+- Starship 与 `gruvbox-rainbow` 主题
+- Ghostty 的 Maple Mono NF CN、Adventure 主题和常用窗口/快捷键配置
 - Hack、JetBrains Mono、Maple Mono Nerd Font
 - Node.js、npm、Corepack、pnpm、Bun
 - pyenv、Python 3.12、uv
@@ -46,7 +54,32 @@ Homebrew 默认直接使用国内镜像：Brew 与 Core 仓库走清华 TUNA，F
 - Claude Code、Codex CLI、Gemini CLI、Grok Build
 - lark-cli、awb-cli、lj-awb-cli
 - Chrome DevTools MCP、PostgreSQL MCP、ClickHouse MCP
-- 团队通用 VS Code 扩展
+- 团队通用 VS Code 扩展，包括 EditorConfig
+
+## 适中档位增量
+
+- Azure CLI、AWS CLI、kubectl、Docker CLI
+- OrbStack、GitLab CLI、Supabase CLI、Go、cloudflared
+- Clash Verge Rev
+- 独立 Chrome 调试配置与 `chrome-debug` 命令
+- 为 Codex 注册 Chrome DevTools、PostgreSQL、ClickHouse MCP
+- MCP 注册不写入数据库连接串、密码或 Token
+
+## 完整档位增量
+
+- Aliyun CLI、`libpq`/`psql`
+- Rustup、Rust stable、Cargo
+- Android Studio、Android Command-line Tools
+- Android SDK Platform 29/36、Build Tools 36、Platform Tools、Emulator 和 API 29 ARM64 系统镜像
+- Arc、Dia、HapiGo、BetterAndBetter、Typeless、Vibe Island、网易云音乐、微信
+- Go、Docker、Containers、YAML、C/C++、CMake、Clangd、LLDB、Rust、Swift VS Code 扩展
+- Codex Documents、PDF、Spreadsheets、Presentations、Template Creator、Sites、Browser、Computer Use、Visualize 插件
+- 从公开来源重装 Lark Skills、find-skills、create-colleague 和 last30days
+- Xcode 与 iShot Pro：不引入 `mas`，安装计划会显示官方 App Store 链接，需人工安装
+
+Full 档不会迁移本机私有或无公开安装源的 Skills，也不会复制 Codex 插件缓存。它只使用公开、可重装的来源。
+
+按当前清单，OpenCLI、Anitime Admin CLI 和 `mas` 不属于任何档位。
 
 ## 其他用法
 
@@ -58,6 +91,10 @@ Homebrew 默认直接使用国内镜像：Brew 与 Core 仓库走清华 TUNA，F
 
     /bin/bash install.sh --profile standard --dry-run
 
+查看完整档位安装计划：
+
+    /bin/bash install.sh --profile full --dry-run
+
 检查当前电脑是否完整：
 
     /bin/bash scripts/doctor.sh --profile basic
@@ -65,6 +102,10 @@ Homebrew 默认直接使用国内镜像：Brew 与 Core 仓库走清华 TUNA，F
 检查适中档位是否完整：
 
     /bin/bash scripts/doctor.sh --profile standard
+
+检查完整档位是否完整：
+
+    /bin/bash scripts/doctor.sh --profile full
 
 指定 pyenv 安装的 Python 版本：
 
@@ -95,6 +136,36 @@ Homebrew 默认直接使用国内镜像：Brew 与 Core 仓库走清华 TUNA，F
 LocalSend 会先通过官方 Homebrew Cask 安装。若 GitHub Releases 下载失败，脚本会临时通过 `https://gh-proxy.com` 镜像重试，并要求 Homebrew 使用 Cask 中的 SHA-256 校验下载文件；该镜像仅作用于本次 LocalSend 重试。可用 `MAC_DEV_LOCALSEND_MIRROR=https://你的镜像地址 /bin/bash install.sh` 替换默认镜像。
 
 Claude Code 优先执行 Anthropic 官方原生安装命令 `curl -fsSL https://claude.ai/install.sh | bash`。若安装 URL 返回 403、下载中断，或安装后 `claude --version` 验证失败，脚本会自动使用官方 Homebrew Cask `brew install --cask claude-code` 兜底，并再次验证命令可用性。
+
+## MCP、插件与 Skills
+
+适中档位会创建无密钥辅助命令并注册三个 Codex MCP：
+
+- `chrome-debug` 使用独立浏览器目录启动 Chrome 9222 调试端口，不复制日常浏览器资料。
+- PostgreSQL MCP 从 `POSTGRES_CONNECTION_STRING`、`DATABASE_URL` 或 `POSTGRES_URL` 读取连接串。
+- ClickHouse MCP 从环境变量读取连接信息。
+
+敏感变量可放入 `~/.config/private-env/postgres.zsh`、`~/.config/private-env/clickhouse.zsh` 或现有的 `~/.codex/.env`。文件应由使用者自行创建并设置为 `600`；仓库不会创建、读取、上传或打印其中的值。
+
+完整档位通过 `codex plugin add` 安装公开 Codex 插件，并通过以下公开来源重装 Skills：
+
+- `larksuite/cli`
+- `vercel-labs/skills` 中的 `find-skills`
+- `titanwings/colleague-skill`
+- `mvanhorn/last30days-skill`
+
+全新电脑需要先首次启动并登录 Codex Desktop，让官方 `openai-bundled` 与 `openai-primary-runtime` 插件市场完成初始化。若 Full 档运行时市场尚未出现，脚本会安全延后插件安装；完成首次启动后重新运行 Full 档即可，doctor 在此之前会如实报告插件缺失。
+
+本机自定义 Skills、账号状态、插件缓存和项目专用浏览器任务不属于可重装清单。
+
+## Full 档人工 App Store 项
+
+Xcode 与 iShot Pro 没有对应的 Homebrew Cask。按照“不引入 `mas`”的选择，Full 档会输出下面两个官方入口，并由 doctor 检查应用是否已经存在：
+
+- [Xcode](https://apps.apple.com/app/xcode/id497799835)
+- [iShot Pro](https://apps.apple.com/app/ishot-pro/id1611347086)
+
+未完成人工安装时，Full 档最终 doctor 会如实报告缺失；完成 App Store 安装后重新运行 `scripts/doctor.sh --profile full` 即可。
 
 ## 迁移 Codex 到新电脑
 
@@ -143,13 +214,13 @@ Claude Code 优先执行 Anthropic 官方原生安装命令 `curl -fsSL https://
 
 - 脚本可重复运行，已经存在的软件会跳过。
 - 不保存或上传账号、Token、数据库密码和 SSH 私钥。
-- 不覆盖已有 VS Code 和 Ghostty 配置。
+- 不覆盖已有 VS Code、Ghostty 和 Starship 配置；仅在文件不存在时创建模板。
 - 除 Anthropic 官方 Claude 安装管道外，其他远程安装器先下载到临时文件，再交给 Bash 执行。
 - 单项失败后继续安装其他项目，并在结尾统一报告。
 
 ## 安装后登录
 
-安装完成后，请分别登录 GitHub、飞书、Codex、Claude、Gemini、Grok Build 和 CC Switch。适中档位还需要按实际使用情况完成 Azure、AWS、GitLab、Supabase 与 Cloudflare 登录，并首次启动 OrbStack。PostgreSQL 与 ClickHouse 的连接信息由使用者在各自的本地环境中配置。
+安装完成后，请分别登录 GitHub、飞书、Codex、Claude、Gemini、Grok Build 和 CC Switch。适中档位还需要按实际使用情况完成 Azure、AWS、GitLab、Supabase 与 Cloudflare 登录，并首次启动 OrbStack、Clash Verge；使用 Chrome DevTools MCP 前先运行 `chrome-debug`。完整档位还需要完成 Aliyun 登录、Android SDK 首次确认，以及 Xcode、iShot Pro 的 App Store 安装。PostgreSQL 与 ClickHouse 的连接信息由使用者在各自的私有环境文件中配置。
 
 ## 测试
 

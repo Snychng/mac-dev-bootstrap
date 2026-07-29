@@ -1,0 +1,41 @@
+# 由 mac-dev-bootstrap 管理的 Ghostty 首次安装模板。
+
+# 字体
+window-title-font-family = Maple Mono NF CN
+font-family = Maple Mono NF CN
+font-size = 14
+adjust-cell-height = 25%
+font-feature = calt, cv01, cv03, ss01, ss02, ss03
+font-thicken = true
+font-thicken-strength = 255
+link-url = true
+link-previews = true
+
+# 主题与窗口
+theme = Adventure
+window-width = 90
+window-height = 24
+window-save-state = always
+window-decoration = true
+macos-titlebar-style = tabs
+background-opacity = 0.98
+quick-terminal-position = center
+window-padding-x = 10
+resize-overlay-duration = 4s 200ms
+window-padding-balance = true
+
+# 分割线与光标
+split-divider-color = #e6c5b4
+unfocused-split-opacity = 0.92
+unfocused-split-fill = #000000
+cursor-color = #f5e0dc
+
+# 终端行为
+scrollback-limit = 400000000
+copy-on-select = clipboard
+mouse-hide-while-typing = true
+shell-integration = zsh
+
+# 快捷键
+keybind = global:super+'=toggle_quick_terminal
+keybind = super+r=reload_config

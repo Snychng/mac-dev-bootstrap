@@ -1,0 +1,18 @@
+# 完整档位在基础与适中 Brewfile 之上追加安装。
+brew "aliyun-cli"
+brew "libpq"
+brew "rustup"
+
+cask "android-commandlinetools"
+cask "android-studio"
+cask "arc"
+cask "thebrowsercompany-dia"
+cask "hapigo"
+cask "betterandbetter"
+cask "typeless"
+cask "vibe-island"
+cask "neteasemusic"
+cask "wechat"
+
+# Xcode 与 iShot Pro 仅通过 Mac App Store 提供。
+# 按用户选择不引入 mas，由 install.sh 输出人工安装链接并由 doctor 验证。

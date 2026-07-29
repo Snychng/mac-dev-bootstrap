@@ -54,6 +54,21 @@ assert_not_contains() {
   fi
 }
 
+assert_lines_subset() {
+  local name="$1"
+  local subset="$2"
+  local superset="$3"
+  local item
+  while IFS= read -r item; do
+    [[ -n "$item" ]] || continue
+    if ! printf '%s\n' "$superset" | grep -Fqx "$item"; then
+      fail "${name}（上级档位缺少 ${item}）"
+      return
+    fi
+  done <<< "$subset"
+  pass "$name"
+}
+
 test_platform_contract() {
   assert_true "支持 Apple Silicon macOS" platform_supported Darwin arm64
   if platform_supported Darwin x86_64; then
@@ -175,10 +190,18 @@ test_install_profile_contract() {
   for item in azure-cli awscli kubernetes-cli docker glab supabase go cloudflared; do
     assert_not_contains "基础档位不含适中 Formula" "$list" "$item"
   done
+  assert_contains "基础档位包含 Starship" "$list" "starship"
   assert_not_contains "基础档位不含 OrbStack" "$(casks)" "orbstack"
+  assert_not_contains "基础档位不含 Clash Verge" "$(casks)" "clash-verge-rev"
+  assert_not_contains "基础档位不含完整档位应用" "$(casks)" "arc"
   assert_contains "基础档位包含 LocalSend" "$(casks)" "localsend"
   assert_contains "基础 doctor 检查 LocalSend 应用" "$(doctor_apps)" "/Applications/LocalSend.app"
   assert_not_contains "基础 doctor 不检查 Azure CLI" "$(doctor_commands)" "az"
+  local basic_formulae_list="$list"
+  local basic_casks_list
+  local basic_extensions_list
+  basic_casks_list="$(casks)"
+  basic_extensions_list="$(vscode_extensions)"
 
   INSTALL_PROFILE="standard"
   list="$(formulae)"
@@ -186,14 +209,74 @@ test_install_profile_contract() {
     assert_contains "适中档位包含新增 Formula" "$list" "$item"
   done
   assert_contains "适中档位包含 OrbStack" "$(casks)" "orbstack"
+  assert_contains "适中档位包含 Clash Verge" "$(casks)" "clash-verge-rev"
+  assert_not_contains "适中档位不含完整档位应用" "$(casks)" "arc"
+  assert_not_contains "适中档位不含阿里云 CLI" "$list" "aliyun-cli"
+  assert_not_contains "适中档位不含 libpq" "$list" "libpq"
+  assert_not_contains "适中档位不含 Rustup" "$list" "rustup"
   for item in az aws kubectl docker orb glab supabase go cloudflared; do
     assert_contains "适中 doctor 检查新增命令" "$(doctor_commands)" "$item"
   done
   assert_contains "适中 doctor 检查 OrbStack 应用" "$(doctor_apps)" "/Applications/OrbStack.app"
+  for item in chrome-devtools postgres clickhouse; do
+    assert_contains "适中档位声明 Codex MCP" "$(codex_mcp_servers)" "$item"
+  done
+  local standard_formulae_list="$list"
+  local standard_casks_list
+  local standard_extensions_list
+  standard_casks_list="$(casks)"
+  standard_extensions_list="$(vscode_extensions)"
+  assert_lines_subset "适中 Formula 完整继承基础档位" "$basic_formulae_list" "$standard_formulae_list"
+  assert_lines_subset "适中 Cask 完整继承基础档位" "$basic_casks_list" "$standard_casks_list"
+  assert_lines_subset "适中扩展完整继承基础档位" "$basic_extensions_list" "$standard_extensions_list"
 
   INSTALL_PROFILE="full"
   assert_contains "完整档位继承适中 Formula" "$(formulae)" "azure-cli"
   assert_contains "完整档位继承适中 Cask" "$(casks)" "orbstack"
+  for item in aliyun-cli libpq rustup; do
+    assert_contains "完整档位包含新增 Formula" "$(formulae)" "$item"
+  done
+  for item in android-commandlinetools android-studio arc thebrowsercompany-dia hapigo betterandbetter typeless vibe-island neteasemusic wechat; do
+    assert_contains "完整档位包含新增 Cask" "$(casks)" "$item"
+  done
+  for item in "/Applications/Xcode.app" "/Applications/iShot Pro.app"; do
+    assert_contains "完整档位检查人工 App Store 应用" "$(manual_app_store_apps)" "$item"
+  done
+  for item in \
+    golang.go \
+    ms-azuretools.vscode-containers \
+    ms-azuretools.vscode-docker \
+    redhat.vscode-yaml \
+    llvm-vs-code-extensions.lldb-dap \
+    llvm-vs-code-extensions.vscode-clangd \
+    ms-vscode.cmake-tools \
+    ms-vscode.cpp-devtools \
+    rust-lang.rust-analyzer \
+    swiftlang.swift-vscode \
+    vadimcn.vscode-lldb; do
+    assert_contains "完整档位包含开发扩展" "$(vscode_extensions)" "$item"
+  done
+  for item in \
+    documents@openai-primary-runtime \
+    pdf@openai-primary-runtime \
+    spreadsheets@openai-primary-runtime \
+    presentations@openai-primary-runtime \
+    template-creator@openai-primary-runtime \
+    sites@openai-bundled \
+    browser@openai-bundled \
+    computer-use@openai-bundled \
+    visualize@openai-bundled; do
+    assert_contains "完整档位包含 Codex 插件" "$(codex_plugins)" "$item"
+  done
+  for item in larksuite/cli vercel-labs/skills titanwings/colleague-skill mvanhorn/last30days-skill; do
+    assert_contains "完整档位包含可重装 Skill 来源" "$(skill_packages)" "$item"
+  done
+  assert_not_contains "完整档位不包含 OpenCLI" "$(npm_global_packages)" "@jackwener/opencli"
+  assert_not_contains "完整档位不包含 Anitime Admin CLI" "$(npm_global_packages)" "@lingjingai/anitime-admin-cli"
+  assert_not_contains "完整档位不包含 mas" "$(formulae)" "mas"
+  assert_lines_subset "完整 Formula 完整继承适中档位" "$standard_formulae_list" "$(formulae)"
+  assert_lines_subset "完整 Cask 完整继承适中档位" "$standard_casks_list" "$(casks)"
+  assert_lines_subset "完整扩展完整继承适中档位" "$standard_extensions_list" "$(vscode_extensions)"
 
   INSTALL_PROFILE="$original_profile"
 }
@@ -348,6 +431,176 @@ test_homebrew_mirror_shell_config() {
   assert_contains "非法终端镜像模式不会沿用旧镜像" "$shell_output" "invalid:|||"
 
   command rm -r "$temporary_directory"
+}
+
+test_prompt_and_terminal_templates() {
+  local temporary_directory
+  local managed_environment
+  local managed_prompt
+  local rendered_starship
+  local rendered_ghostty
+  temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/mac-dev-bootstrap-prompt-test.XXXXXX")"
+  managed_environment="$temporary_directory/zshrc.zsh"
+  managed_prompt="$temporary_directory/prompt.zsh"
+  rendered_starship="$temporary_directory/starship.toml"
+  rendered_ghostty="$temporary_directory/ghostty.conf"
+
+  write_managed_shell_config "$managed_environment"
+  write_managed_prompt_config "$managed_prompt"
+  write_starship_config "$rendered_starship"
+  write_default_ghostty_config "$rendered_ghostty"
+
+  if grep -Eq 'ZSH_THEME=|oh-my-zsh\\.sh|starship init' "$managed_environment"; then
+    fail "环境配置不越权管理提示符"
+  else
+    pass "环境配置不越权管理提示符"
+  fi
+  if grep -Fq 'ZSH_THEME=""' "$managed_prompt" && \
+    grep -Fq 'oh-my-zsh.sh' "$managed_prompt" && \
+    grep -Fq '/opt/homebrew/bin/starship init zsh' "$managed_prompt"; then
+    pass "提示符配置由 Oh My Zsh 插件与 Starship 组成"
+  else
+    fail "提示符配置由 Oh My Zsh 插件与 Starship 组成"
+  fi
+  if grep -Fq '/opt/homebrew/opt/libpq/bin' "$managed_environment" && \
+    grep -Fq '/opt/homebrew/opt/rustup/bin' "$managed_environment" && \
+    grep -Fq '$ANDROID_HOME/platform-tools' "$managed_environment" && \
+    grep -Fq '.cargo/env' "$managed_environment"; then
+    pass "环境配置包含完整档位工具链 PATH"
+  else
+    fail "环境配置包含完整档位工具链 PATH"
+  fi
+  if [[ -f "$ROOT_DIR/config/starship.toml" ]] && \
+    grep -Fq "palette = 'gruvbox_dark'" "$ROOT_DIR/config/starship.toml"; then
+    pass "仓库包含 gruvbox-rainbow Starship 模板"
+  else
+    fail "仓库包含 gruvbox-rainbow Starship 模板"
+  fi
+  if [[ -f "$ROOT_DIR/config/ghostty/config" ]] && \
+    grep -Fq 'font-family = Maple Mono NF CN' "$ROOT_DIR/config/ghostty/config" && \
+    grep -Fq 'theme = Adventure' "$ROOT_DIR/config/ghostty/config"; then
+    pass "仓库包含当前 Ghostty 模板"
+  else
+    fail "仓库包含当前 Ghostty 模板"
+  fi
+  if cmp -s "$ROOT_DIR/config/starship.toml" "$rendered_starship" && \
+    cmp -s "$ROOT_DIR/config/ghostty/config" "$rendered_ghostty"; then
+    pass "本地安装使用仓库内终端模板"
+  else
+    fail "本地安装使用仓库内终端模板"
+  fi
+
+  command rm -r "$temporary_directory"
+}
+
+test_mcp_plugin_and_skill_install_contract() {
+  local temporary_directory
+  local helper_dir
+  local output
+  temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/mac-dev-bootstrap-ai-test.XXXXXX")"
+  helper_dir="$temporary_directory/bin"
+
+  if write_mcp_helper_scripts "$helper_dir" >/dev/null 2>&1 && \
+    [[ -x "$helper_dir/chrome-debug" && \
+       -x "$helper_dir/mcp-postgres" && \
+       -x "$helper_dir/mcp-clickhouse" ]] && \
+    /bin/bash -n \
+      "$helper_dir/chrome-debug" \
+      "$helper_dir/mcp-postgres" \
+      "$helper_dir/mcp-clickhouse" && \
+    grep -Fq 'chrome-debug-profile' "$helper_dir/chrome-debug" && \
+    grep -Fq 'POSTGRES_CONNECTION_STRING' "$helper_dir/mcp-postgres" && \
+    grep -Fq 'mcp-clickhouse' "$helper_dir/mcp-clickhouse"; then
+    pass "MCP 辅助脚本无密钥且可执行"
+  else
+    fail "MCP 辅助脚本无密钥且可执行"
+  fi
+
+  output="$({
+    codex_mcp_registered() { return 1; }
+    run_command() { printf '命令：%s\n' "$*"; }
+    register_codex_mcp_server chrome-devtools
+    register_codex_mcp_server postgres
+    register_codex_mcp_server clickhouse
+  } 2>&1)"
+  if printf '%s\n' "$output" | grep -Fq \
+      '命令：codex mcp add chrome-devtools -- chrome-devtools-mcp --browser-url=http://127.0.0.1:9222' && \
+    printf '%s\n' "$output" | grep -Fq \
+      "命令：codex mcp add postgres -- ${CONFIG_HOME}/bin/mcp-postgres" && \
+    printf '%s\n' "$output" | grep -Fq \
+      "命令：codex mcp add clickhouse -- ${CONFIG_HOME}/bin/mcp-clickhouse"; then
+    pass "Codex MCP 使用无密钥注册命令"
+  else
+    fail "Codex MCP 使用无密钥注册命令"
+  fi
+
+  output="$({
+    INSTALL_PROFILE="full"
+    codex_plugin_installed() { return 1; }
+    codex_plugin_marketplaces_ready() { return 0; }
+    command_exists() { return 0; }
+    run_command() { printf '命令：%s\n' "$*"; }
+    install_codex_plugins
+    install_skill_packages
+  } 2>&1)"
+  if printf '%s\n' "$output" | grep -Fq \
+      '命令：codex plugin add --json documents@openai-primary-runtime' && \
+    printf '%s\n' "$output" | grep -Fq \
+      '命令：npx -y skills add larksuite/cli -g -y' && \
+    printf '%s\n' "$output" | grep -Fq \
+      '命令：npx -y skills add vercel-labs/skills -g -y --skill find-skills --agent *' && \
+    printf '%s\n' "$output" | grep -Fq \
+      '命令：npx -y skills add titanwings/colleague-skill -g -y --agent codex' && \
+    printf '%s\n' "$output" | grep -Fq \
+      '命令：npx -y skills add mvanhorn/last30days-skill -g -y --agent codex'; then
+    pass "完整档位使用公开来源安装 Codex 插件与 Skills"
+  else
+    fail "完整档位使用公开来源安装 Codex 插件与 Skills"
+  fi
+
+  if (
+    INSTALL_PROFILE="full"
+    FAILED_STEPS=()
+    command_exists() { return 0; }
+    codex_plugin_marketplaces_ready() { return 1; }
+    install_codex_plugins >/dev/null 2>&1
+    [[ "${#FAILED_STEPS[@]}" -eq 0 ]]
+  ); then
+    pass "Codex 首次启动前延后插件安装而不误报失败"
+  else
+    fail "Codex 首次启动前延后插件安装而不误报失败"
+  fi
+
+  command rm -r "$temporary_directory"
+}
+
+test_full_toolchain_install_contract() {
+  local output
+  output="$({
+    INSTALL_PROFILE="full"
+    DRY_RUN=1
+    command_exists() { return 0; }
+    command() {
+      if [[ "$1" == "-v" && "$2" == "rustup" ]]; then
+        printf '/opt/homebrew/bin/rustup\n'
+      else
+        builtin command "$@"
+      fi
+    }
+    android_java_home() { printf '/Applications/Android Studio.app/Contents/jbr/Contents/Home\n'; }
+    install_android_sdk
+    install_rust_toolchain
+  } 2>&1)"
+  if printf '%s\n' "$output" | grep -Fq 'platform-tools' && \
+    printf '%s\n' "$output" | grep -Fq 'platforms\;android-29' && \
+    printf '%s\n' "$output" | grep -Fq 'platforms\;android-36' && \
+    printf '%s\n' "$output" | grep -Fq 'system-images\;android-29\;google_apis\;arm64-v8a' && \
+    printf '%s\n' "$output" | grep -Fq \
+      '[模拟执行] /opt/homebrew/bin/rustup default stable'; then
+    pass "完整档位声明 Android SDK 与 Rust stable 安装步骤"
+  else
+    fail "完整档位声明 Android SDK 与 Rust stable 安装步骤"
+  fi
 }
 
 test_claude_installer_contract() {
@@ -577,16 +830,25 @@ test_cask_manifest() {
 test_brewfile_profile_manifest() {
   local basic_manifest
   local standard_manifest
+  local full_manifest
   local item
 
   basic_manifest="$(sed -n 's/^[[:space:]]*brew "\([^"]*\)".*/\1/p; s/^[[:space:]]*cask "\([^"]*\)".*/\1/p' "$ROOT_DIR/Brewfile")"
   standard_manifest="$(sed -n 's/^[[:space:]]*brew "\([^"]*\)".*/\1/p; s/^[[:space:]]*cask "\([^"]*\)".*/\1/p' "$ROOT_DIR/Brewfile.standard" 2>/dev/null || true)"
+  full_manifest="$(sed -n 's/^[[:space:]]*brew "\([^"]*\)".*/\1/p; s/^[[:space:]]*cask "\([^"]*\)".*/\1/p' "$ROOT_DIR/Brewfile.full" 2>/dev/null || true)"
 
   assert_contains "基础 Brewfile 包含 LocalSend" "$basic_manifest" "localsend"
+  assert_contains "基础 Brewfile 包含 Starship" "$basic_manifest" "starship"
   for item in azure-cli awscli kubernetes-cli docker glab supabase go cloudflared orbstack; do
     assert_not_contains "基础 Brewfile 不含适中工具" "$basic_manifest" "$item"
     assert_contains "适中 Brewfile 包含新增工具" "$standard_manifest" "$item"
   done
+  assert_contains "适中 Brewfile 包含 Clash Verge" "$standard_manifest" "clash-verge-rev"
+  for item in aliyun-cli libpq rustup android-studio android-commandlinetools arc thebrowsercompany-dia hapigo betterandbetter typeless vibe-island neteasemusic wechat; do
+    assert_not_contains "适中 Brewfile 不含完整工具" "$standard_manifest" "$item"
+    assert_contains "完整 Brewfile 包含新增工具" "$full_manifest" "$item"
+  done
+  assert_not_contains "完整 Brewfile 不引入 mas" "$full_manifest" "mas"
 }
 
 test_npm_manifest() {
@@ -605,6 +867,7 @@ test_vscode_manifest() {
   for item in anthropic.claude-code openai.chatgpt continue.continue ms-python.python ms-python.vscode-pylance ms-vscode-remote.remote-ssh vue.volar ritwickdey.liveserver davidanson.vscode-markdownlint ms-ceintl.vscode-language-pack-zh-hans; do
     assert_contains "VS Code 扩展清单" "$list" "$item"
   done
+  assert_contains "基础 VS Code 清单包含 EditorConfig" "$list" "editorconfig.editorconfig"
   assert_not_contains "VS Code 清单不含 Docker 扩展" "$list" "docker.docker"
 }
 
@@ -645,6 +908,18 @@ test_dry_run_contract() {
     fail "dry-run 展示适中档位新增工具"
   fi
 
+  if output="$(MAC_DEV_BOOTSTRAP_TEST=0 /bin/bash "$ROOT_DIR/install.sh" \
+    --profile full --dry-run 2>&1)" && \
+    printf '%s\n' "$output" | grep -Fq '安装档位：完整' && \
+    printf '%s\n' "$output" | grep -Fq 'aliyun-cli' && \
+    printf '%s\n' "$output" | grep -Fq 'thebrowsercompany-dia' && \
+    printf '%s\n' "$output" | grep -Fq 'Xcode：https://apps.apple.com/app/xcode/id497799835' && \
+    printf '%s\n' "$output" | grep -Fq 'documents@openai-primary-runtime'; then
+    pass "dry-run 展示完整档位新增工具与人工步骤"
+  else
+    fail "dry-run 展示完整档位新增工具与人工步骤"
+  fi
+
   if MAC_DEV_BOOTSTRAP_TEST=0 /bin/bash "$ROOT_DIR/install.sh" \
     --profile invalid --dry-run >/dev/null 2>&1; then
     fail "dry-run 拒绝非法安装档位"
@@ -675,6 +950,9 @@ test_homebrew_mirror_contract
 test_homebrew_mirror_installer
 test_homebrew_initialization_failure
 test_homebrew_mirror_shell_config
+test_prompt_and_terminal_templates
+test_mcp_plugin_and_skill_install_contract
+test_full_toolchain_install_contract
 test_localsend_installer_fallback
 test_claude_installer_contract
 test_claude_installer_fallback
